@@ -1,18 +1,41 @@
 # app.py
 import streamlit as st
 import fitz  # PyMuPDF
-import io
 from PIL import Image
+import io
 import numpy as np
 import pytesseract
 import easyocr
+import shutil
+import traceback
 
-st.set_page_config(page_title="Simple PDF → Single String (no Poppler)", layout="wide")
-st.title("Simple PDF → Single-String Text Extractor (Poppler NOT required)")
+st.set_page_config(page_title="PDF → Single-String OCR (robust)", layout="wide")
+st.title("PDF → Single string extractor (auto-fallback to OCR)")
 
 uploaded = st.file_uploader("Upload a PDF", type=["pdf"])
-use_ocr = st.checkbox("Use OCR (for scanned PDFs)", value=False)
-engine = st.radio("OCR engine (only used if OCR selected)", ("pytesseract", "easyocr"))
+force_ocr = st.checkbox("Force OCR for all pages (skip embedded text)", value=False)
+prefer_engine = st.radio("Preferred OCR engine", ("pytesseract", "easyocr"))
+use_gpu = st.checkbox("EasyOCR GPU (if using EasyOCR)", value=False)
+
+def check_tesseract_available():
+    return shutil.which("tesseract") is not None
+
+tesseract_ok = check_tesseract_available()
+if not tesseract_ok:
+    st.info("Tesseract binary not found in PATH. pytesseract OCR will not work until Tesseract is installed.")
+
+# Try to initialize EasyOCR reader lazily and catch errors
+easyocr_reader = None
+easyocr_ok = False
+if prefer_engine == "easyocr" or not tesseract_ok:
+    try:
+        easyocr_reader = easyocr.Reader(["en"], gpu=use_gpu)
+        easyocr_ok = True
+    except Exception as e:
+        easyocr_reader = None
+        easyocr_ok = False
+        st.warning("EasyOCR initialization failed (torch/CPU/GPU issue). EasyOCR will not be used.")
+        st.write(traceback.format_exc())
 
 if uploaded:
     try:
@@ -22,56 +45,117 @@ if uploaded:
         st.error(f"Failed to open PDF: {e}")
         st.stop()
 
-    total_pages = doc.page_count
-    st.info(f"Opened PDF with {total_pages} page(s). Processing...")
+    n_pages = doc.page_count
+    st.info(f"Opened PDF — pages: {n_pages}")
 
-    if use_ocr and engine == "easyocr":
-        reader = easyocr.Reader(["en"], gpu=False)
-    else:
-        reader = None
+    extracted_pages = []
+    any_text_found = False
 
-    all_text_parts = []
-
-    with st.spinner("Extracting text..."):
-        for i in range(total_pages):
+    with st.spinner("Extracting pages..."):
+        for i in range(n_pages):
             page = doc.load_page(i)
 
-            if not use_ocr:
-                # Try to extract embedded (digital) text first
-                text = page.get_text("text").strip()
-                if not text:
-                    # If empty and OCR not requested, still attempt OCR fallback
-                    text = ""
-                all_text_parts.append(f"\n\n--- Page {i+1} ---\n{text}")
+            # 1) Try embedded (digital) text first (unless force_ocr is True)
+            page_text = ""
+            if not force_ocr:
+                try:
+                    page_text = page.get_text("text") or ""
+                    page_text = page_text.strip()
+                except Exception:
+                    page_text = ""
+
+            used_method = "embedded" if page_text else None
+
+            # 2) If no embedded text (or forced), do OCR fallback
+            if not page_text:
+                # render page to image for OCR
+                try:
+                    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # 2x zoom for better OCR
+                    img_bytes = pix.tobytes("png")
+                    pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                except Exception as e:
+                    st.error(f"Failed to render page {i+1} to image for OCR: {e}")
+                    pil_img = None
+
+                ocr_text = ""
+                if pil_img is not None:
+                    if prefer_engine == "pytesseract" and tesseract_ok:
+                        try:
+                            ocr_text = pytesseract.image_to_string(pil_img).strip()
+                            used_method = "pytesseract"
+                        except Exception as e:
+                            ocr_text = ""
+                            st.warning(f"pytesseract error on page {i+1}: {e}")
+                    elif prefer_engine == "easyocr" and easyocr_ok:
+                        try:
+                            arr = np.array(pil_img)
+                            res = easyocr_reader.readtext(arr, detail=0)
+                            ocr_text = "\n".join(res).strip()
+                            used_method = "easyocr"
+                        except Exception as e:
+                            ocr_text = ""
+                            st.warning(f"EasyOCR error on page {i+1}: {e}")
+                    else:
+                        # Try whichever is available
+                        if tesseract_ok:
+                            try:
+                                ocr_text = pytesseract.image_to_string(pil_img).strip()
+                                used_method = "pytesseract"
+                            except Exception:
+                                ocr_text = ""
+                        elif easyocr_ok:
+                            try:
+                                arr = np.array(pil_img)
+                                res = easyocr_reader.readtext(arr, detail=0)
+                                ocr_text = "\n".join(res).strip()
+                                used_method = "easyocr"
+                            except Exception:
+                                ocr_text = ""
+                        else:
+                            ocr_text = ""
+                page_text = ocr_text or ""
+
+            if page_text:
+                any_text_found = True
             else:
-                # Render page to image via PyMuPDF (no Poppler)
-                pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))  # zoom=2 for better OCR
-                img_bytes = pix.tobytes("png")
-                pil_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                # keep empty string, but indicate method attempted
+                pass
 
-                if engine == "pytesseract":
-                    try:
-                        text = pytesseract.image_to_string(pil_img)
-                    except Exception as ex:
-                        st.error(f"pytesseract error: {ex}")
-                        text = ""
-                else:
-                    arr = np.array(pil_img)
-                    try:
-                        results = reader.readtext(arr, detail=0)
-                        text = "\n".join(results)
-                    except Exception as ex:
-                        st.error(f"EasyOCR error: {ex}")
-                        text = ""
+            extracted_pages.append({"page": i + 1, "text": page_text, "method": used_method or "none"})
 
-                all_text_parts.append(f"\n\n--- Page {i+1} ---\n{text.strip()}")
+    # Prepare single concatenated string
+    parts = []
+    for p in extracted_pages:
+        parts.append(f"\n\n--- Page {p['page']} | method: {p['method']} ---\n{p['text']}")
+    full_text = "\n".join(parts).strip()
 
-    full_text = "\n".join(all_text_parts).strip()
-    if not full_text:
-        st.warning("No text extracted. If this is a scanned PDF, enable 'Use OCR' and try EasyOCR or pytesseract.")
+    # Show brief diagnostics and preview of first page image if available
+    st.subheader("Extraction summary")
+    st.write(f"Pages processed: {n_pages}")
+    methods = {p['page']: p['method'] for p in extracted_pages}
+    st.write("Methods used per page:", methods)
+
+    # Show first page image (rendered) for debugging
+    try:
+        if n_pages > 0:
+            first_pix = doc.load_page(0).get_pixmap(matrix=fitz.Matrix(1, 1))
+            st.image(first_pix.tobytes("png"), caption="First page preview")
+    except Exception:
+        pass
+
     st.subheader("Extracted text (single string)")
-    st.text_area("Full OCR text", full_text, height=450)
+    st.text_area("Full text", full_text, height=400)
 
     if full_text:
-        st.download_button("Download extracted text (.txt)", full_text, file_name="extracted_text.txt", mime="text/plain")
-    st.success("Done")
+        st.download_button("Download .txt", full_text, file_name="extracted_text.txt", mime="text/plain")
+    else:
+        st.warning("No text extracted. If this is a scanned PDF, enable OCR or check that Tesseract/EasyOCR is installed. See notes below.")
+
+    st.markdown("**Notes / Troubleshooting**")
+    st.markdown(
+        "- If pages show `method: embedded` but text is empty: the PDF may use non-standard encodings. Try forcing OCR.\n"
+        "- To use pytesseract you must have the Tesseract binary installed and available in PATH (try `which tesseract` on Linux/macOS or ensure `tesseract.exe` in PATH on Windows).\n"
+        "- If EasyOCR fails to initialize, ensure PyTorch is installed for your environment."
+    )
+
+    st.info(f"Tesseract available: {tesseract_ok}, EasyOCR available: {easyocr_ok}")
