@@ -1,6 +1,7 @@
 streamlit
-pdf2image
+PyMuPDF
 pytesseract
-Pillow
 easyocr
+Pillow
+numpy
 
