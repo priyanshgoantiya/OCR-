@@ -67,7 +67,3 @@ else:
         2. Or, redeploy with EasyOCR (see requirements below)
         """)
 
-st.markdown("""
----
-### 🧩 Requirements (for Streamlit Cloud)
-
