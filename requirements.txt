@@ -1,5 +1,5 @@
-streamlit
-PyMuPDF
-pytesseract
-Pillow
+streamlit==1.50.0
+pytesseract==0.3.13
+pdf2image==1.17.0
+Pillow==11.3.0
 
