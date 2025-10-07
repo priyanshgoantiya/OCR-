@@ -1,6 +1,6 @@
 streamlit
 pdf2image
 pytesseract
+Pillow
 easyocr
-pillow
-poppler-utils
+
