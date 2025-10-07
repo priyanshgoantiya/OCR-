@@ -1,54 +1,64 @@
 # app.py
 import streamlit as st
-import fitz  # PyMuPDF
-import pytesseract
+from pdf2image import convert_from_bytes
 from PIL import Image
 import io
+import tempfile
+import pytesseract
+import easyocr
+from concurrent.futures import ThreadPoolExecutor
 
-st.set_page_config(page_title="PDF OCR Extractor", layout="wide")
-st.title("📘 PDF OCR Text Extractor")
+st.set_page_config(page_title="PDF → OCR", layout="wide")
+st.title("PDF → OCR (select engine & performance options)")
 
-uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
-use_ocr = st.checkbox("Enable OCR for scanned PDFs", value=True)
-show_page_breaks = st.checkbox("Show page separators", value=True)
+uploaded = st.file_uploader("/content/PublicWaterMassMailing.pdf", type=["pdf"])
+engine = st.radio("OCR engine", ("pytesseract", "easyocr"))
+use_gpu = st.checkbox("Use GPU (EasyOCR only)", value=False)
+max_workers = st.slider("Worker threads (parallel OCR)", 1, 8, 2)
+resize_width = st.number_input("Resize width (px, 0 = keep original)", 0, 3000, 1600)
 
-if uploaded_file is None:
-    st.info("Upload a PDF to extract text (OCR can read scanned/image PDFs).")
-else:
-    pdf_bytes = uploaded_file.read()
-    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-    n_pages = len(doc)
-    st.info(f"PDF loaded with {n_pages} pages")
+if uploaded:
+    raw = uploaded.read()
+    try:
+        pages = convert_from_bytes(raw, dpi=200)
+    except Exception as e:
+        st.error(f"Failed to convert PDF: {e}")
+        st.stop()
 
-    all_text = []
-    methods = {}
+    st.info(f"Converted {len(pages)} page(s). Running OCR with {engine}...")
 
-    with st.spinner("Extracting text..."):
-        for i, page in enumerate(doc, start=1):
-            text = page.get_text("text")
-            if not text.strip() and use_ocr:
-                pix = page.get_pixmap(dpi=300)
-                img = Image.open(io.BytesIO(pix.tobytes("png")))
-                ocr_text = pytesseract.image_to_string(img)
-                text = ocr_text.strip()
-                methods[i] = "ocr"
-            elif text.strip():
-                methods[i] = "digital"
-            else:
-                methods[i] = "none"
-
-            sep = f"\n\n--- Page {i} ({methods[i]}) ---\n" if show_page_breaks else "\n"
-            all_text.append(sep + (text if text else "[no text found]"))
-
-    full_text = "\n".join(all_text).strip()
-
-    st.subheader("Extraction Summary")
-    st.write(f"Pages processed: {n_pages}")
-    st.json(methods)
-
-    if full_text:
-        st.subheader("Extracted Text")
-        st.text_area("Full Text", full_text, height=450)
-        st.download_button("Download Text", full_text, file_name="extracted_text.txt", mime="text/plain")
+    if engine == "easyocr":
+        reader = easyocr.Reader(["en"], gpu=use_gpu)
     else:
-        st.warning("No text could be extracted. Check if the PDF pages are blank or heavily blurred.")
+        reader = None
+
+    def ocr_image(idx_img):
+        idx, img = idx_img
+        if resize_width and img.width > resize_width:
+            h = int(resize_width * img.height / img.width)
+            img = img.resize((resize_width, h))
+        b = io.BytesIO()
+        img.save(b, format="PNG")
+        arr = b.getvalue()
+        if engine == "pytesseract":
+            text = pytesseract.image_to_string(Image.open(io.BytesIO(arr)))
+        else:
+            res = reader.readtext(arr, detail=0)
+            text = "\n".join(res)
+        return idx, text
+
+    with st.spinner("Running OCR..."):
+        inputs = list(enumerate(pages))
+        outputs = {}
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            for idx, text in ex.map(ocr_image, inputs):
+                outputs[idx] = text
+
+    for i in range(len(pages)):
+        st.subheader(f"Page {i+1}")
+        cols = st.columns([1,2])
+        with cols[0]:
+            st.image(pages[i], use_column_width=True)
+        with cols[1]:
+            st.text_area("OCR text", outputs.get(i, ""), height=300)
+    st.success("Done")
