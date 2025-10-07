@@ -1,65 +1,54 @@
 # app.py
-# app.py
 import streamlit as st
-from pypdf import PdfReader
+import fitz  # PyMuPDF
+import pytesseract
+from PIL import Image
 import io
 
-st.set_page_config(page_title="PDF OCR App (text-only)", layout="wide")
-st.title("📄 PDF Text Extractor (selectable text only)")
+st.set_page_config(page_title="PDF OCR Extractor", layout="wide")
+st.title("📘 PDF OCR Text Extractor")
 
-uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"])
-show_page_breaks = st.checkbox("Show page separators in output", value=True)
+uploaded_file = st.file_uploader("Upload a PDF file", type=["pdf"])
+use_ocr = st.checkbox("Enable OCR for scanned PDFs", value=True)
+show_page_breaks = st.checkbox("Show page separators", value=True)
 
 if uploaded_file is None:
-    st.info("Upload a PDF to extract selectable (embedded) text. Scanned PDFs (images) are not OCR'd here.")
+    st.info("Upload a PDF to extract text (OCR can read scanned/image PDFs).")
 else:
-    # read bytes once
     pdf_bytes = uploaded_file.read()
-    try:
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-    except Exception as e:
-        st.error(f"Failed to open PDF: {e}")
-        st.stop()
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    n_pages = len(doc)
+    st.info(f"PDF loaded with {n_pages} pages")
 
-    n_pages = len(reader.pages)
-    st.info(f"PDF opened — {n_pages} pages found")
-
-    parts = []
-    any_text = False
+    all_text = []
     methods = {}
 
-    with st.spinner("Extracting selectable text from PDF..."):
-        for i, page in enumerate(reader.pages, start=1):
-            try:
-                page_text = page.extract_text() or ""
-            except Exception:
-                page_text = ""
-            page_text = page_text.strip()
-            methods[i] = "digital" if page_text else "none"
-            sep = f"\n\n--- Page {i} ---\n" if show_page_breaks else "\n"
-            parts.append(sep + (page_text if page_text else "[no selectable text]"))
-            if page_text:
-                any_text = True
+    with st.spinner("Extracting text..."):
+        for i, page in enumerate(doc, start=1):
+            text = page.get_text("text")
+            if not text.strip() and use_ocr:
+                pix = page.get_pixmap(dpi=300)
+                img = Image.open(io.BytesIO(pix.tobytes("png")))
+                ocr_text = pytesseract.image_to_string(img)
+                text = ocr_text.strip()
+                methods[i] = "ocr"
+            elif text.strip():
+                methods[i] = "digital"
+            else:
+                methods[i] = "none"
 
-    full_text = "\n".join(parts).strip()
+            sep = f"\n\n--- Page {i} ({methods[i]}) ---\n" if show_page_breaks else "\n"
+            all_text.append(sep + (text if text else "[no text found]"))
 
-    st.subheader("Extraction summary")
+    full_text = "\n".join(all_text).strip()
+
+    st.subheader("Extraction Summary")
     st.write(f"Pages processed: {n_pages}")
-    st.write("Methods used per page (digital means selectable text found):", methods)
+    st.json(methods)
 
-    if any_text:
-        st.subheader("Extracted text (single string)")
-        st.text_area("Full text", full_text, height=450)
-        st.download_button("Download extracted text (.txt)", full_text, file_name="extracted_text.txt", mime="text/plain")
+    if full_text:
+        st.subheader("Extracted Text")
+        st.text_area("Full Text", full_text, height=450)
+        st.download_button("Download Text", full_text, file_name="extracted_text.txt", mime="text/plain")
     else:
-        st.warning(
-            "No selectable (digital) text found in this PDF. It looks like a scanned/image PDF.\n\n"
-            "If you need OCR on scanned PDFs, run this app locally and enable OCR (instructions below)."
-        )
-
-    st.markdown(
-        "### How to run with OCR locally\n"
-        "1. Install requirements (locally): `pip install -r requirements_ocr.txt`\n"
-        "2. Install system tools: `sudo apt install -y poppler-utils tesseract-ocr` (Linux) or use brew on macOS or Windows installer for Tesseract.\n"
-        "3. Use the PyMuPDF / pdf2image + pytesseract version of the app (I can provide that file if you want)."
-    )
+        st.warning("No text could be extracted. Check if the PDF pages are blank or heavily blurred.")
