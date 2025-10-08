@@ -1,9 +1,6 @@
 streamlit
 pypdf
-pillow
-numpy
-pymupdf
-easyocr
-torch           # easyocr needs torch; include the appropriate torch wheel if necessary
+requests
+Pillow
 
 
