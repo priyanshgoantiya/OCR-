@@ -1,157 +1,126 @@
 # app.py
-import os
-import io
-import time
 import streamlit as st
 from pypdf import PdfReader, PdfWriter
+from google import genai
+from google.genai import types
+import io
+import time
+import json
 
-# === optional: install google-genai and import ===
-# pip package name: google-genai
-try:
-    from google import genai
-    from google.genai import types
-    GEMINI_AVAILABLE = True
-except Exception:
-    genai = None
-    types = None
-    GEMINI_AVAILABLE = False
+# Streamlit Page Setup
+st.set_page_config(page_title="PDF Text Extractor (Gemini OCR)", layout="wide")
+st.title("📄 PDF Text Extractor — Gemini AI (Free API)")
 
-if not GEMINI_AVAILABLE:
-    st.warning("Gemini SDK not installed. App will use OCR.space fallback. Add 'google-genai' to requirements.txt and redeploy to enable Gemini.")
-
-st.set_page_config(page_title="PDF → Gemini OCR", layout="wide")
-st.title("📄 PDF → Gemini (image/pdf → text) — per-page processing")
-
-uploaded = st.file_uploader("Upload a PDF", type=["pdf"])
-gemini_key = st.text_input("Gemini API key (paste your key here)", value="", type="password",
-                          help="Create/get a free key from Google AI Studio. For testing you can paste it here.")
-model_choice = st.selectbox("Gemini model (choose)", options=["gemini-2.5-flash", "gemini-1.5-flash"])
+# Upload PDF
+uploaded = st.file_uploader("Upload your PDF", type=["pdf"])
+api_key = st.text_input(
+    "Enter your Gemini API key",
+    type="password",
+    help="Get a free key from https://aistudio.google.com/app/apikey"
+)
 
 if uploaded is None:
-    st.info("Upload a PDF to extract text.")
+    st.info("Please upload a PDF to continue.")
     st.stop()
 
-if not GEMINI_AVAILABLE:
-    st.error("google-genai SDK not available. Add 'google-genai' to requirements.txt and redeploy.")
+if not api_key.strip():
+    st.warning("Enter your Gemini API key to start processing.")
     st.stop()
 
+# Initialize Gemini client
+try:
+    client = genai.Client(api_key=api_key)
+except Exception as e:
+    st.error(f"Failed to initialize Gemini client: {e}")
+    st.stop()
+
+# Read PDF
 pdf_bytes = uploaded.read()
 try:
     pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
     total_pages = len(pdf_reader.pages)
+    st.success(f"PDF loaded successfully — {total_pages} pages found.")
 except Exception as e:
-    st.error(f"Cannot read PDF: {e}")
+    st.error(f"Error reading PDF: {e}")
     st.stop()
 
-st.info(f"Opened PDF — {total_pages} pages found.")
-# prepare containers
-extracted_text = [None] * total_pages
-methods = {i + 1: None for i in range(total_pages)}
+# Extract text from each page
+final_texts = []
+methods = {}
+progress = st.progress(0)
 
-# 1) Try to extract digital text
 for i, page in enumerate(pdf_reader.pages, start=1):
+    st.info(f"Processing page {i}/{total_pages} ...")
+    progress.progress((i - 1) / total_pages)
+
+    # Extract text directly if available
     try:
-        text = page.extract_text() or ""
+        page_text = page.extract_text() or ""
     except Exception:
-        text = ""
-    if text.strip():
+        page_text = ""
+
+    if page_text.strip():
         methods[i] = "digital"
-        extracted_text[i - 1] = text
+        final_texts.append(page_text)
+        st.success(f"✅ Page {i}: Extracted digital text ({len(page_text)} chars)")
     else:
-        methods[i] = "needs_gemini"
-        extracted_text[i - 1] = None
+        methods[i] = "gemini"
+        # Convert single page to bytes
+        writer = PdfWriter()
+        writer.add_page(pdf_reader.pages[i - 1])
+        single_page_io = io.BytesIO()
+        writer.write(single_page_io)
+        single_page_io.seek(0)
+        page_bytes = single_page_io.getvalue()
 
-needs = [p for p, m in methods.items() if m == "needs_gemini"]
-st.write(f"{len(needs)} page(s) need Gemini OCR")
+        # Call Gemini OCR
+        try:
+            result = client.models.generate_content(
+                model="gemini-1.5-flash-latest",  # ✅ Updated model
+                contents=[
+                    types.Part.from_bytes(page_bytes, mime_type="application/pdf"),
+                    "Extract all readable text from this PDF page."
+                ],
+            )
+            text = result.text.strip() if result and result.text else ""
+            if text:
+                final_texts.append(text)
+                st.success(f"✅ Page {i}: Gemini extracted {len(text)} chars")
+            else:
+                final_texts.append("[No text found by Gemini]")
+                st.warning(f"⚠️ Page {i}: Gemini returned no text.")
+        except Exception as e:
+            final_texts.append("[Gemini failed]")
+            st.error(f"❌ Gemini request failed for page {i}: {e}")
 
-if needs:
-    if not gemini_key:
-        st.warning("No Gemini API key provided — pages that require OCR will not be processed. Paste your key and re-run.")
-    else:
-        # configure API key in-process so SDK picks it up
-        # it's OK to set environment variable here for the running process
-        os.environ["GOOGLE_API_KEY"] = gemini_key
-        client = genai.Client()  # uses env var if present
+    time.sleep(0.8)  # Gentle delay between requests
 
-        per_page_delay = st.number_input("Delay between Gemini requests ( secs )", value=0.6, min_value=0.0, step=0.1)
-        progress = st.progress(0)
-        success_cnt = 0
+progress.progress(1.0)
+st.success("✅ Extraction complete!")
 
-        for idx, page_num in enumerate(needs, start=1):
-            progress.progress((idx - 1) / len(needs))
-            st.info(f"Gemini: processing page {page_num} ({idx}/{len(needs)}) ...")
+# Combine all text into a single string
+final_text = "\n\n".join(final_texts)
 
-            # create single page pdf bytes in memory
-            writer = PdfWriter()
-            try:
-                writer.add_page(pdf_reader.pages[page_num - 1])
-            except Exception as e:
-                st.error(f"Failed to extract page {page_num}: {e}")
-                methods[page_num] = "extract_failed"
-                extracted_text[page_num - 1] = ""
-                continue
+st.subheader("🧾 Final Combined Extracted Text")
+st.text_area("All Extracted Text", final_text, height=480)
 
-            single_io = io.BytesIO()
-            try:
-                writer.write(single_io)
-                single_io.seek(0)
-            except Exception as e:
-                st.error(f"Failed to write single-page PDF for page {page_num}: {e}")
-                methods[page_num] = "write_failed"
-                extracted_text[page_num - 1] = ""
-                continue
+# Download button
+st.download_button(
+    "💾 Download Extracted Text",
+    data=final_text,
+    file_name="extracted_text.txt",
+    mime="text/plain",
+)
 
-            size_kb = len(single_io.getvalue()) / 1024
-            st.write(f"Single-page PDF size: {size_kb:.1f} KB")
-
-            # Build Gemini request: inline PDF bytes then a short task prompt
-            try:
-                contents = [
-                    types.Part.from_bytes(data=single_io.getvalue(), mime_type="application/pdf"),
-                    # instructions: be concise, return only plain text (no commentary)
-                    "Extract and return the plain textual content from this page. Return only the text; do not add explanations, labels, or markup."
-                ]
-
-                response = client.models.generate_content(
-                    model=model_choice,
-                    contents=contents,
-                    # you can add other request options if needed
-                )
-
-                page_text = (response.text or "").strip()
-                if page_text:
-                    methods[page_num] = "gemini"
-                    extracted_text[page_num - 1] = page_text
-                    success_cnt += 1
-                    st.success(f"Page {page_num} OCR ok — {len(page_text)} chars.")
-                else:
-                    methods[page_num] = "gemini_empty"
-                    extracted_text[page_num - 1] = ""
-                    st.warning(f"Page {page_num} returned empty text.")
-            except Exception as e:
-                methods[page_num] = "gemini_error"
-                extracted_text[page_num - 1] = ""
-                st.error(f"Gemini request failed for page {page_num}: {e}")
-
-            time.sleep(per_page_delay)
-
-        progress.progress(1.0)
-        st.success(f"Gemini OCR finished: {success_cnt}/{len(needs)} pages succeeded.")
-
-# final: join into a single plain string (just the page texts concatenated)
-plain_parts = []
-for i, text in enumerate(extracted_text, start=1):
-    method = methods.get(i, "unknown")
-    block = text if text else ""
-    plain_parts.append(block)
-
-# join with two newlines between pages, then strip
-all_text_single_string = "\n\n".join(plain_parts).strip()
-
-st.subheader("Final concatenated plain text (single string)")
-st.text_area("All text", value=all_text_single_string or "[no text found]", height=400)
-
-st.download_button("Download plain text", all_text_single_string, file_name="extracted_text.txt", mime="text/plain")
-
-st.subheader("Per-page extraction summary (method)")
+# Display method summary
+st.subheader("Per-Page Extraction Summary")
 st.json(methods)
+
+st.markdown("---")
+st.markdown("""
+**Notes:**
+- Gemini tries to extract visible text from each page image/PDF.
+- If digital text is already present, it's extracted directly (no API usage).
+- If a page is image-only, Gemini OCR extracts the text.
+- Free Gemini API keys may have rate limits (1–2 pages per minute max).
+""")
