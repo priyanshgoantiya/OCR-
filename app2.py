@@ -16,6 +16,9 @@ except Exception:
     types = None
     GEMINI_AVAILABLE = False
 
+if not GEMINI_AVAILABLE:
+    st.warning("Gemini SDK not installed. App will use OCR.space fallback. Add 'google-genai' to requirements.txt and redeploy to enable Gemini.")
+
 st.set_page_config(page_title="PDF → Gemini OCR", layout="wide")
 st.title("📄 PDF → Gemini (image/pdf → text) — per-page processing")
 
