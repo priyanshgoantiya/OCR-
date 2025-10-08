@@ -1,95 +1,121 @@
 # app.py
-# app.py (relevant parts)
+# app.py
 import streamlit as st
 from pypdf import PdfReader
 import io
-import numpy as np
-from PIL import Image
-import logging
+import requests
+import json
 
-# Use PyMuPDF for rendering PDF pages to images (no poppler required)
-try:
-    import fitz  # pymupdf
-    HAS_FITZ = True
-except Exception:
-    fitz = None
-    HAS_FITZ = False
-
-# Try to import EasyOCR safely
-try:
-    import easyocr
-    OCR_AVAILABLE = True
-    # Use cpu by default on Streamlit Cloud (gpu=False)
-    ocr_reader = easyocr.Reader(['en'], gpu=False)
-except Exception as e:
-    OCR_AVAILABLE = False
-    ocr_reader = None
-
-st.set_page_config(page_title="📄 PDF OCR App", layout="wide")
-st.title("📄 PDF Text Extractor (with EasyOCR / PyMuPDF)")
+st.set_page_config(page_title="PDF OCR (OCR.space fallback)", layout="wide")
+st.title("📄 PDF Text Extractor — digital text + OCR.space fallback")
 
 uploaded = st.file_uploader("Upload a PDF", type=["pdf"])
+api_key = st.text_input("OCR.space API key (leave blank to use 'helloworld' test key)", value="helloworld", help="Get a free key from https://ocr.space/ if you plan to OCR many files or large PDFs.")
+
 if uploaded is None:
     st.info("Upload a PDF to extract text.")
     st.stop()
 
 pdf_bytes = uploaded.read()
-
-# Read PDF for digital text first
 try:
-    reader_pdf = PdfReader(io.BytesIO(pdf_bytes))
-    n = len(reader_pdf.pages)
+    pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+    total_pages = len(pdf_reader.pages)
 except Exception as e:
     st.error(f"Cannot read PDF: {e}")
     st.stop()
 
-st.info(f"Opened PDF — {n} pages found.")
-extracted_text = ""
+st.info(f"Opened PDF — {total_pages} pages found.")
+extracted_text = []
 methods = {}
 
-for i, page in enumerate(reader_pdf.pages, start=1):
-    text = page.extract_text() or ""
-    if text.strip():
+# First pass: try to extract digital text from each page
+for i, page in enumerate(pdf_reader.pages, start=1):
+    try:
+        page_text = page.extract_text() or ""
+    except Exception:
+        page_text = ""
+    if page_text.strip():
         methods[i] = "digital"
-        extracted_text += f"\n--- Page {i} | method: digital ---\n{text}\n"
+        extracted_text.append(page_text)
     else:
-        # OCR path
-        methods[i] = "ocr" if OCR_AVAILABLE else "none"
-        if not OCR_AVAILABLE:
-            extracted_text += f"\n--- Page {i} | method: none ---\n[no text found: OCR lib not available]\n"
-            continue
+        methods[i] = "needs_ocr"
+        extracted_text.append(None)
 
-        if not HAS_FITZ:
-            st.error(
-                "PDF->image renderer (PyMuPDF) not available. "
-                "Add 'pymupdf' to requirements.txt and redeploy, or install poppler for pdf2image."
-            )
-            extracted_text += f"\n--- Page {i} | method: ocr ---\n[no text found: renderer missing]\n"
-            continue
+needs_ocr_pages = [p for p, m in methods.items() if m == "needs_ocr"]
 
-        st.info(f"Running OCR on page {i} ...")
+if not needs_ocr_pages:
+    st.success("All pages contained digital (extractable) text — no OCR needed.")
+else:
+    st.warning(f"{len(needs_ocr_pages)} page(s) need OCR. Using OCR.space to OCR the full PDF (per-page results).")
+    with st.spinner("Uploading PDF to OCR.space and running OCR..."):
+        key_to_use = api_key.strip() or "helloworld"
         try:
-            # Open PDF as fitz doc from bytes
-            doc = fitz.open(stream=pdf_bytes, filetype="pdf")
-            fitz_page = doc.load_page(i - 1)  # 0-indexed
-            pix = fitz_page.get_pixmap(dpi=200)  # render page
-            img_bytes = pix.tobytes(output="png")  # PNG bytes
-            page_image = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+            url = "https://api.ocr.space/parse/image"
+            files = {"file": ("file.pdf", pdf_bytes)}
+            data = {
+                "apikey": key_to_use,
+                "language": "eng",
+                "isOverlayRequired": False,
+                "detectOrientation": True,
+                "OCREngine": 2
+            }
+            resp = requests.post(url, files=files, data=data, timeout=120)
+            resp.raise_for_status()
+            result = resp.json()
+        except requests.exceptions.RequestException as re:
+            st.error(f"OCR request failed: {re}")
+            result = {"IsErroredOnProcessing": True, "ErrorMessage": [str(re)], "ParsedResults": []}
+        except json.JSONDecodeError as je:
+            st.error(f"Bad response from OCR provider: {je}")
+            result = {"IsErroredOnProcessing": True, "ErrorMessage": [str(je)], "ParsedResults": []}
 
-            # easyocr accepts numpy arrays
-            result = ocr_reader.readtext(np.array(page_image))
-            page_text = " ".join([item[1] for item in result]) if result else ""
-            if page_text.strip():
-                extracted_text += f"\n--- Page {i} | method: ocr ---\n{page_text}\n"
-            else:
-                extracted_text += f"\n--- Page {i} | method: ocr ---\n[no text found]\n"
-        except Exception as e:
-            st.warning(f"OCR failed on page {i}: {e}")
-            extracted_text += f"\n--- Page {i} | method: ocr ---\n[no text found: {e}]\n"
+        if result.get("IsErroredOnProcessing"):
+            err_msg = result.get("ErrorMessage") or result.get("Error")
+            st.error(f"OCR.space returned error: {err_msg}")
+        else:
+            parsed = result.get("ParsedResults") or []
+            # parsed is usually a list with one entry per page (if PDF uploaded)
+            for idx in range(1, total_pages + 1):
+                if methods[idx] == "digital":
+                    continue
+                # map parsed results positionally; guard against shorter returned list
+                parsed_index = idx - 1
+                if parsed_index < len(parsed):
+                    page_parsed = parsed[parsed_index]
+                    page_text = page_parsed.get("ParsedText", "") or ""
+                    if page_text.strip():
+                        methods[idx] = "ocr.space"
+                        extracted_text[idx - 1] = page_text
+                    else:
+                        methods[idx] = "ocr.space_empty"
+                        extracted_text[idx - 1] = ""
+                else:
+                    methods[idx] = "ocr.space_missing"
+                    extracted_text[idx - 1] = ""
+
+# Build final joined output with clear per-page markers
+final_text_parts = []
+for i, txt in enumerate(extracted_text, start=1):
+    method = methods.get(i, "unknown")
+    content = txt or "[no text found]"
+    final_text_parts.append(f"--- Page {i} | method: {method} ---\n{content}\n")
+
+final_text = "\n".join(final_text_parts)
 
 st.subheader("Extraction summary")
 st.json(methods)
-st.text_area("Full text", extracted_text.strip(), height=500)
-st.download_button("💾 Download Text", extracted_text, "extracted_text.txt")
+
+st.subheader("Extracted text (preview)")
+st.text_area("Full extracted text", final_text.strip(), height=480)
+
+st.download_button("💾 Download extracted text", final_text, "extracted_text.txt")
+
+st.markdown("---")
+st.markdown(
+    "Notes:\n\n"
+    "- This app first tries to extract digital text (fast). If any page lacks digital text, it uploads the PDF to OCR.space for OCR.\n"
+    "- The default API key 'helloworld' works for small tests but is rate-limited. Get a free API key at https://ocr.space/ for production use.\n"
+    "- If you prefer a local OCR (EasyOCR) or a renderer-based approach, let me know and I'll provide an alternate version."
+)
 
 
