@@ -21,6 +21,19 @@ api_key = st.text_input(
     help="Get a free key from https://aistudio.google.com/app/apikey"
 )
 
+# Model selection
+model_option = st.selectbox(
+    "Select Gemini Model",
+    [
+        "gemini-1.5-flash", 
+        "gemini-1.5-pro", 
+        "gemini-1.0-pro",
+        "gemini-1.5-flash-8b"
+    ],
+    index=0,
+    help="Try different models if one doesn't work"
+)
+
 # Check if PDF is uploaded
 if not uploaded:
     st.info("Upload a PDF to extract text.")
@@ -41,7 +54,7 @@ except Exception as e:
     st.error(f"Failed to initialize Gemini client: {e}")
     st.stop()
 
-st.info("Sending PDF to Gemini — please wait...")
+st.info(f"Sending PDF to Gemini ({model_option}) — please wait...")
 
 try:
     # Correct usage in new google-genai SDK
@@ -53,7 +66,7 @@ try:
     )
     
     response = client.models.generate_content(
-        model="gemini-1.5-flash-latest",
+        model=model_option,
         contents=[
             pdf_part,
             "Extract and return only the readable plain text from this PDF. Return text only, no explanation.",
@@ -69,7 +82,7 @@ try:
         
         # Display and download
         st.subheader("🧾 Extracted Text")
-        st.text_area("All text", value=text or "[no text found]", height=480)
+        st.text_area("All text", value=text, height=480)
         
         st.download_button(
             "💾 Download text", 
@@ -80,7 +93,11 @@ try:
 
 except Exception as e:
     st.error(f"Gemini request failed: {e}")
+    st.error("Try selecting a different model from the dropdown above.")
     st.stop()
 
 st.markdown("---")
-st.markdown("**Tip:** If you see model or quota errors, try gemini-1.5-pro-latest or check your key in Google AI Studio.")
+st.markdown("**Tips:**")
+st.markdown("- Try different models if one doesn't work")
+st.markdown("- Make sure your API key is valid and has available quota")
+st.markdown("- For free tier, use gemini-1.5-flash or gemini-1.0-pro")
