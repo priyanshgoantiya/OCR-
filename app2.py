@@ -21,18 +21,18 @@ api_key = st.text_input(
     help="Get a free key from https://aistudio.google.com/app/apikey"
 )
 
-# Model selection
-model_option = st.selectbox(
-    "Select Gemini Model",
-    [
-        "gemini-1.5-flash", 
-        "gemini-1.5-pro", 
-        "gemini-1.0-pro",
-        "gemini-1.5-flash-8b"
-    ],
-    index=0,
-    help="Try different models if one doesn't work"
-)
+# # Model selection
+# model_option = st.selectbox(
+#     "Select Gemini Model",
+#     [
+#         "gemini-1.5-flash", 
+#         "gemini-1.5-pro", 
+#         "gemini-1.0-pro",
+#         "gemini-1.5-flash-8b"
+#     ],
+#     index=0,
+#     help="Try different models if one doesn't work"
+# )
 
 # Check if PDF is uploaded
 if not uploaded:
@@ -66,7 +66,7 @@ try:
     )
     
     response = client.models.generate_content(
-        model=model_option,
+        model="models/gemini-2.5-flash",
         contents=[
             pdf_part,
             "Extract and return only the readable plain text from this PDF. Return text only, no explanation.",
