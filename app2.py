@@ -54,7 +54,6 @@ except Exception as e:
     st.error(f"Failed to initialize Gemini client: {e}")
     st.stop()
 
-st.info(f"Sending PDF to Gemini ({model_option}) — please wait...")
 
 try:
     # Correct usage in new google-genai SDK
