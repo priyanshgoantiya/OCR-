@@ -1,6 +1,6 @@
 # OCR
-deploylink ap2--https://4qfuvcqxovyuki4gqk8vd2.streamlit.app/
-deploylink ap2--https://app2py-ldjkzaevpoxse6t4s6yh2q.streamlit.app/
+deploylink app1--https://4qfuvcqxovyuki4gqk8vd2.streamlit.app/
+deploylink app2--https://app2py-ldjkzaevpoxse6t4s6yh2q.streamlit.app/
 # PDF Text Extractor with OCR
 
 A Streamlit web application that extracts text from PDF files using both digital text extraction and OCR.space API for scanned pages. Automatically detects pages with digital text and only uses OCR for scanned pages that need it.
