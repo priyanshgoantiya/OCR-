@@ -1,40 +1,40 @@
-# OCR
-deploylink app1--https://4qfuvcqxovyuki4gqk8vd2.streamlit.app/
-deploylink app2--https://app2py-ldjkzaevpoxse6t4s6yh2q.streamlit.app/
-# PDF Text Extractor with OCR
+# 📄 PDF Text Extractor with Dual OCR Engines
 
-A Streamlit web application that extracts text from PDF files using both digital text extraction and OCR.space API for scanned pages. Automatically detects pages with digital text and only uses OCR for scanned pages that need it.
+A powerful Streamlit web application that extracts text from PDF files using multiple advanced methods. Choose between traditional OCR processing with OCR.space or AI-powered extraction with Google Gemini based on your specific needs.
 
 ![Streamlit](https://img.shields.io/badge/Streamlit-FF4B4B?style=for-the-badge&logo=Streamlit&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![PDF](https://img.shields.io/badge/PDF-FF6B6B?style=for-the-badge)
+![Google AI](https://img.shields.io/badge/Google_AI-4285F4?style=for-the-badge&logo=google&logoColor=white)
 
-## 🚀 Features
+## 🌐 Live Demos
 
+**App 1 (OCR.space Version)**: [https://4qfuvcqxovyuki4gqk8vd2.streamlit.app/](https://4qfuvcqxovyuki4gqk8vd2.streamlit.app/)
+
+**App 2 (Gemini Version)**: [https://app2py-ldjkzaevpoxse6t4s6yh2q.streamlit.app/](https://app2py-ldjkzaevpoxse6t4s6yh2q.streamlit.app/)
+
+## ✨ Features
+
+### 🔍 OCR.space Method
 - **Smart Dual Extraction**: Automatically detects digital text and only uses OCR for scanned pages
 - **Per-Page Processing**: Uploads individual pages to OCR.space to bypass free plan limitations
 - **Real-time Progress**: Live progress bar and status updates during OCR processing
 - **Configurable API Settings**: Adjustable delays between requests to respect rate limits
-- **Detailed Analytics**: Extraction summary showing method used for each page
-- **Export Results**: Download complete extracted text as a `.txt` file
 - **Memory Efficient**: Processes files in-memory without saving to disk
 
-## 📋 How It Works
+### 🤖 Gemini AI Method
+- **AI-Powered Extraction**: Uses Google Gemini 2.5 Flash for intelligent text extraction
+- **Single API Call**: Processes entire PDF in one request
+- **High Accuracy**: Leverages Google's advanced AI model for better text recognition
+- **Simple Interface**: Clean, straightforward PDF-to-text conversion
 
-1. **Digital Text Detection**: Uses `pypdf` to extract directly accessible text from each PDF page
-2. **OCR Fallback**: For pages without digital text, creates single-page PDFs and sends to OCR.space API
-3. **Smart Optimization**: Only processes pages that actually need OCR, saving time and API calls
-4. **Results Compilation**: Combines all extracted text with detailed page-by-page method tracking
-
-## 🛠️ Installation
-
-### Prerequisites
-- Python 3.7 or higher
-- pip package manager
-
-### Quick Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/priyanshgoantiya/OCR-.git
-   cd OCR-
+### 🎯 Common Features
+- **Detailed Analytics**: Extraction summary showing method used for each page
+- **Export Results**: Download complete extracted text as `.txt` files
+- **Error Handling**: Comprehensive error handling for API failures
+- **User-Friendly**: Intuitive Streamlit interface
+graph LR
+    A[Upload PDF] --> B[Send to Gemini AI]
+    B --> C[AI Processes Entire PDF]
+    C --> D[Return Extracted Text]
+    D --> E[Download Results]
