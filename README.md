@@ -33,8 +33,5 @@ A powerful Streamlit web application that extracts text from PDF files using mul
 - **Export Results**: Download complete extracted text as `.txt` files
 - **Error Handling**: Comprehensive error handling for API failures
 - **User-Friendly**: Intuitive Streamlit interface
-graph LR
-    A[Upload PDF] --> B[Send to Gemini AI]
-    B --> C[AI Processes Entire PDF]
-    C --> D[Return Extracted Text]
-    D --> E[Download Results]
+
+![Gemini Process Diagram](pdf/deepseek_mermaid_20251013_571fa1.png)
