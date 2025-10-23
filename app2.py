@@ -1,5 +1,4 @@
 # app.py
-# app.py
 import streamlit as st
 from google import genai
 from google.genai import types
@@ -60,16 +59,6 @@ except Exception as e:
 # Define prompt
 prompt = """Extract patient administrative information from the hospital discharge summary. Apply OCR best practices and return data in JSON format.
 
-OCR PROCESSING INSTRUCTIONS:
-- Scan entire document systematically (top to bottom, left to right)
-- Check header section first (typically top 20% of page)
-- Look for tables, boxes, or bordered sections containing patient info
-- For handwritten text: analyze character shapes carefully, consider context
-- Cross-verify similar fields (e.g., if MR No. appears twice, use most complete)
-- Identify labels like "Name:", "Patient:", "MRN:", "IP No:", "Admission Date:"
-- Handle multi-line fields by concatenating text logically
-- Ignore watermarks, logos, and irrelevant decorative elements
-
 REQUIRED FIELDS:
 1. patient_full_name
 2. age_gender
@@ -86,8 +75,6 @@ EXTRACTION RULES:
 - For dates: preserve original format
 - For age_gender: combine with " / " separator
 - For mr_no_ip_no: combine with " / " separator
-- Remove extra spaces but keep intentional formatting
-- For unclear handwriting: provide best interpretation
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -101,12 +88,13 @@ OUTPUT FORMAT (strict JSON):
   "discharge_summary_number": "string"
 }
 
-CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."""
+CRITICAL: Return ONLY valid JSON."""
 
 # Call Gemini API
 try:
-    pdf_part = types.Part.from_bytes(pdf_bytes, mime_type="application/pdf")
-    prompt_part = types.Part.from_text(prompt)
+    # Correct usage of Part.from_bytes and Part.from_text
+    pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
+    prompt_part = types.Part.from_text(text=prompt)
 
     response = client.models.generate_content(
         model=model_option,
@@ -159,4 +147,3 @@ st.markdown("- **Best for OCR:** gemini-2.0-flash-exp, gemini-2.5-flash")
 st.markdown("- **Fastest:** gemini-1.5-flash-8b")
 st.markdown("- **Most accurate:** gemini-1.5-pro")
 st.markdown("- Make sure your API key is valid and has available quota")
-
