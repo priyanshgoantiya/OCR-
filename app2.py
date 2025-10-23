@@ -118,24 +118,21 @@ OUTPUT FORMAT (strict JSON):
 }
 
 CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."""
-# Call Gemini API
+# Prepare PDF part and prompt (no try needed here)
+pdf_part = types.Part(
+    inline_data=types.Blob(
+        mime_type="application/pdf", 
+        data=pdf_bytes
+    )
+)
+
+prompt_part = types.Part(text=prompt)
+
+# Call Gemini API safely
 try:
-    # Correct usage for new SDK
     response = client.models.generate_content(
         model=model_option,
-        contents=[
-            types.Content(
-                parts=[
-                    types.Part(
-                        inline_data=types.Blob(
-                            mime_type='application/pdf',
-                            data=pdf_bytes
-                        )
-                    ),
-                    types.Part(text=prompt)
-                ]
-            )
-        ]
+        contents=[types.Content(parts=[pdf_part, prompt_part])]
     )
 
     text = (response.text or "").strip() if response else ""
