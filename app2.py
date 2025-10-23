@@ -21,6 +21,21 @@ api_key = st.text_input(
     help="Get a free key from https://aistudio.google.com/app/apikey"
 )
 
+# Model selection
+model_option = st.selectbox(
+    "Select Gemini Model",
+    [
+        "gemini-2.0-flash-exp",
+        "gemini-2.5-flash", 
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-8b",
+        "gemini-1.5-pro",
+        "gemini-exp-1206"
+    ],
+    index=0,
+    help="Best OCR models: gemini-2.0-flash-exp, gemini-2.5-flash, gemini-1.5-flash"
+)
+
 # Check if PDF is uploaded
 if not uploaded:
     st.info("Upload a PDF to extract text.")
@@ -50,62 +65,39 @@ try:
         )
     )
     
-    prompt = """Extract the following patient administrative information from the provided hospital discharge summary document. Return the data in structured JSON format with exact field names as specified.
+    prompt = """Extract the following patient administrative information from the hospital discharge summary. Return data in JSON format.
 
 REQUIRED FIELDS:
 1. patient_full_name
-2. age
-3. gender
-4. medical_record_number (MRN)
-5. inpatient_number (IP_No)
-6. admission_date_time
-7. discharge_date_time
-8. admitting_doctor_name
-9. admitting_doctor_registration_number
-10. hospital_name
-11. discharge_summary_number
-
-OPTIONAL FIELDS (extract if present):
-- ward_details
-- bed_number
-- consultant_specialty
-- emergency_contact
+2. age_gender (format: "age / gender")
+3. mr_no_ip_no (format: "MR No. / IP No.")
+4. admission_date_time
+5. discharge_date_time
+6. admitting_doctor_name
+7. admitting_doctor_registration_number
+8. discharge_summary_number
 
 INSTRUCTIONS:
-- Extract values exactly as they appear in the document
-- Use "NOT_FOUND" for missing required fields
-- Use null for missing optional fields
-- Preserve date formats as shown (DD/MM/YYYY HH:MM:SS)
-- For handwritten text, provide best-effort interpretation with confidence score
-- If multiple values exist for same field, return array
+- Extract values exactly as they appear
+- Use "NOT_FOUND" for missing fields
+- Preserve date formats as shown
+- Combine age and gender with " / " separator
+- Combine MR No. and IP No. with " / " separator
 
 OUTPUT FORMAT:
 {
   "patient_full_name": "string",
-  "age": "string",
-  "gender": "string",
-  "medical_record_number": "string",
-  "inpatient_number": "string",
+  "age_gender": "string",
+  "mr_no_ip_no": "string",
   "admission_date_time": "string",
   "discharge_date_time": "string",
   "admitting_doctor_name": "string",
   "admitting_doctor_registration_number": "string",
-  "hospital_name": "string",
-  "discharge_summary_number": "string",
-  "optional_fields": {
-    "ward_details": "string or null",
-    "bed_number": "string or null",
-    "consultant_specialty": "string or null"
-  },
-  "extraction_metadata": {
-    "confidence_score": "float (0-1)",
-    "handwritten_fields": ["array of field names"],
-    "extraction_timestamp": "ISO 8601"
-  }
+  "discharge_summary_number": "string"
 }"""
     
     response = client.models.generate_content(
-        model="models/gemini-2.5-flash",
+        model=f"models/{model_option}",
         contents=[
             pdf_part,
             prompt,
@@ -117,7 +109,7 @@ OUTPUT FORMAT:
     if not text:
         st.warning("No text returned by Gemini.")
     else:
-        st.success("✅ Text extracted successfully!")
+        st.success(f"✅ Text extracted successfully using {model_option}!")
         
         # Display and download
         st.subheader("🧾 Extracted Text")
@@ -147,10 +139,12 @@ OUTPUT FORMAT:
             
 except Exception as e:
     st.error(f"Gemini request failed: {e}")
+    st.error(f"Try selecting a different model from the dropdown above.")
     st.stop()
 
 st.markdown("---")
 st.markdown("**Tips:**")
-st.markdown("- Try different models if one doesn't work")
+st.markdown("- **Best for OCR:** gemini-2.0-flash-exp, gemini-2.5-flash")
+st.markdown("- **Fastest:** gemini-1.5-flash-8b")
+st.markdown("- **Most accurate:** gemini-1.5-pro")
 st.markdown("- Make sure your API key is valid and has available quota")
-st.markdown("- For free tier, use gemini-1.5-flash or gemini-1.0-pro")
