@@ -120,16 +120,8 @@ CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."
     response = client.models.generate_content(
     model=model_option,
     contents=[
-        types.Content(
-            role="user",
-            parts=[
-                types.Part(inline_data=types.Blob(
-                    mime_type="application/pdf",
-                    data=pdf_bytes
-                )),
-                types.Part(text=prompt)
-            ]
-        )
+        types.Part.from_text(prompt),
+        types.Part.from_bytes(pdf_bytes, mime_type="application/pdf")
     ]
 )
 
