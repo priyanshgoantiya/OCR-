@@ -118,7 +118,7 @@ OUTPUT FORMAT (strict JSON):
 
 CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."""
     response = client.models.generate_content(
-    model=model_option,  # ❗ no "models/" prefix
+    model=model_option,
     contents=[
         {
             "role": "user",
@@ -129,6 +129,7 @@ CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."
         }
     ]
 )
+
     
     text = (response.text or "").strip() if response else ""
     
