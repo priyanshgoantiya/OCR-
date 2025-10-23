@@ -1,9 +1,9 @@
 # app.py
-# app.py
 import streamlit as st
 from google import genai
 from google.genai import types
 import json
+import base64
 
 # Page configuration
 st.set_page_config(
@@ -49,6 +49,7 @@ if not api_key.strip():
 
 # Read file bytes
 pdf_bytes = uploaded.read()
+pdf_b64 = base64.b64encode(pdf_bytes).decode("utf-8")  # Convert to base64 for Gemini SDK
 
 # Initialize Gemini client
 try:
@@ -57,16 +58,15 @@ except Exception as e:
     st.error(f"Failed to initialize Gemini client: {e}")
     st.stop()
 
-try:
-    # Correct usage in new google-genai SDK
-    pdf_part = types.Part(
-        inline_data=types.Blob(
-            mime_type="application/pdf", 
-            data=pdf_bytes
-        )
+# Prepare PDF part and prompt
+pdf_part = types.Part(
+    blob=types.Blob(
+        mime_type="application/pdf",
+        data=pdf_b64
     )
-    
-    prompt = """Extract patient administrative information from the hospital discharge summary. Apply OCR best practices and return data in JSON format.
+)
+
+prompt = """Extract patient administrative information from the hospital discharge summary. Apply OCR best practices and return data in JSON format.
 
 OCR PROCESSING INSTRUCTIONS:
 - Scan entire document systematically (top to bottom, left to right)
@@ -79,31 +79,22 @@ OCR PROCESSING INSTRUCTIONS:
 - Ignore watermarks, logos, and irrelevant decorative elements
 
 REQUIRED FIELDS:
-1. patient_full_name (check for: "Name", "Patient Name", "Patient", title prefixes like Mr./Mrs./Dr.)
-2. age_gender (format: "age / gender" - look for "Age:", "Sex:", "Gender:", "M/F")
-3. mr_no_ip_no (format: "MR No. / IP No." - check "MRN", "Medical Record", "IP No", "IPD No")
-4. admission_date_time (look for: "Admission Date", "Admitted On", "Date of Admission", "Adm Dt/Tm")
-5. discharge_date_time (look for: "Discharge Date", "Discharged On", "Date of Discharge", "Disch Dt/Tm")
-6. admitting_doctor_name (check: "Admitting Doctor", "Consultant", "Treating Doctor", "Dr.")
-7. admitting_doctor_registration_number (look for: "Reg No", "Registration", "R.N.", "Reg.No.", "License No")
-8. discharge_summary_number (check: "Summary No", "DS No", "Document ID", "Report No")
+1. patient_full_name
+2. age_gender
+3. mr_no_ip_no
+4. admission_date_time
+5. discharge_date_time
+6. admitting_doctor_name
+7. admitting_doctor_registration_number
+8. discharge_summary_number
 
 EXTRACTION RULES:
 - Extract values EXACTLY as they appear (preserve spelling, capitalization, punctuation)
 - Use "NOT_FOUND" for genuinely missing fields
-- For dates: preserve original format (DD/MM/YYYY, MM/DD/YYYY, or any format shown)
-- For age_gender: combine with " / " separator (e.g., "45 / Male" or "32Y / F")
-- For mr_no_ip_no: combine with " / " separator (e.g., "123456 / 789012")
-- If field has multiple values, choose the most complete/authoritative one
+- Preserve date formats
+- Combine age / gender and MR/IP numbers with " / "
 - Remove extra spaces but keep intentional formatting
 - For unclear handwriting: provide best interpretation, don't skip
-
-QUALITY CHECKS:
-- Verify name contains alphabetic characters (not just numbers)
-- Ensure dates follow logical patterns (day ≤ 31, month ≤ 12, year realistic)
-- Check MR/IP numbers are numeric or alphanumeric
-- Confirm doctor name includes "Dr." or similar title
-- Validate registration number format (often alphanumeric with special chars)
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -117,57 +108,48 @@ OUTPUT FORMAT (strict JSON):
   "discharge_summary_number": "string"
 }
 
-CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."""
-# Prepare PDF part and prompt (no try needed here)
-pdf_part = types.Part(
-    inline_data=types.Blob(
-        mime_type="application/pdf", 
-        data=pdf_bytes
-    )
-)
+CRITICAL: Return ONLY valid JSON."""
 
 prompt_part = types.Part(text=prompt)
 
-# Call Gemini API safely
+# Call Gemini API
 try:
     response = client.models.generate_content(
         model=model_option,
         contents=[types.Content(parts=[pdf_part, prompt_part])]
     )
 
-    text = (response.text or "").strip() if response else ""
-    
+    text = (response.content[0].text or "").strip() if response and response.content else ""
+
     if not text:
         st.warning("No text returned by Gemini.")
     else:
         st.success(f"✅ Text extracted successfully using {model_option}!")
-        
-        # Display and download
+
+        # Display and download raw text
         st.subheader("🧾 Extracted Text")
         st.text_area("All text", value=text, height=480)
-        
         st.download_button(
-            "💾 Download text", 
-            data=text, 
-            file_name="extracted_text.txt", 
+            "💾 Download text",
+            data=text,
+            file_name="extracted_text.txt",
             mime="text/plain"
         )
-        
-        # Try to parse as JSON
+
+        # Try parsing JSON
         try:
             parsed_json = json.loads(text)
             st.subheader("📋 Structured Data")
             st.json(parsed_json)
-            
             st.download_button(
-                "💾 Download JSON", 
-                data=json.dumps(parsed_json, indent=2), 
-                file_name="extracted_data.json", 
+                "💾 Download JSON",
+                data=json.dumps(parsed_json, indent=2),
+                file_name="extracted_data.json",
                 mime="application/json"
             )
-        except:
+        except json.JSONDecodeError:
             st.info("Output is not valid JSON. Displaying as plain text.")
-            
+
 except Exception as e:
     st.error(f"Gemini request failed: {e}")
     st.error(f"Try selecting a different model from the dropdown above.")
