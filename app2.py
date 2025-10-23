@@ -65,35 +65,25 @@ try:
         )
     )
     
-    prompt = """Extract the following patient administrative information from the hospital discharge summary. Return data in JSON format.
+    prompt = """Extract diagnosis information from the hospital discharge summary document. Return data in structured JSON format.
 
 REQUIRED FIELDS:
-1. patient_full_name
-2. age_gender (format: "age / gender")
-3. mr_no_ip_no (format: "MR No. / IP No.")
-4. admission_date_time
-5. discharge_date_time
-6. admitting_doctor_name
-7. admitting_doctor_registration_number
-8. discharge_summary_number
+1. provisional_diagnosis - Initial diagnosis made at admission (may be labeled as "Provisional Diagnosis", "Admitting Diagnosis", "Working Diagnosis", or "Impression on Admission")
+2. final_diagnosis - Confirmed diagnosis at discharge (may be labeled as "Final Diagnosis", "Discharge Diagnosis", "Principal Diagnosis", or simply "Diagnosis")
 
 INSTRUCTIONS:
-- Extract values exactly as they appear
-- Use "NOT_FOUND" for missing fields
-- Preserve date formats as shown
-- Combine age and gender with " / " separator
-- Combine MR No. and IP No. with " / " separator
+- Extract diagnoses exactly as documented
+- If diagnosis has multiple conditions, separate with " | " delimiter
+- Distinguish between primary and secondary diagnoses if specified
+- Include ICD codes if present in format: "condition (ICD-code)"
+- Use "NOT_FOUND" if field not present in document
+- Preserve medical terminology and abbreviations
+- For handwritten sections, provide best interpretation
 
 OUTPUT FORMAT:
 {
-  "patient_full_name": "string",
-  "age_gender": "string",
-  "mr_no_ip_no": "string",
-  "admission_date_time": "string",
-  "discharge_date_time": "string",
-  "admitting_doctor_name": "string",
-  "admitting_doctor_registration_number": "string",
-  "discharge_summary_number": "string"
+  "provisional_diagnosis": "string or NOT_FOUND",
+  "final_diagnosis": "string or NOT_FOUND"
 }"""
     
     response = client.models.generate_content(
