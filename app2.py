@@ -118,15 +118,26 @@ OUTPUT FORMAT (strict JSON):
 }
 
 CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."""
-    
+# Call Gemini API
+try:
+    # Correct usage for new SDK
     response = client.models.generate_content(
-        model=f"models/{model_option}",
+        model=model_option,
         contents=[
-            pdf_part,
-            prompt,
-        ],
+            types.Content(
+                parts=[
+                    types.Part(
+                        inline_data=types.Blob(
+                            mime_type='application/pdf',
+                            data=pdf_bytes
+                        )
+                    ),
+                    types.Part(text=prompt)
+                ]
+            )
+        ]
     )
-    
+
     text = (response.text or "").strip() if response else ""
     
     if not text:
