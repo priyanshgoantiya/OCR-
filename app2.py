@@ -65,27 +65,58 @@ try:
         )
     )
     
-    prompt = """Extract diagnosis information from the hospital discharge summary document. Return data in structured JSON format.
+    prompt = """Extract patient administrative information from the hospital discharge summary. Apply OCR best practices and return data in JSON format.
+
+OCR PROCESSING INSTRUCTIONS:
+- Scan entire document systematically (top to bottom, left to right)
+- Check header section first (typically top 20% of page)
+- Look for tables, boxes, or bordered sections containing patient info
+- For handwritten text: analyze character shapes carefully, consider context
+- Cross-verify similar fields (e.g., if MR No. appears twice, use most complete)
+- Identify labels like "Name:", "Patient:", "MRN:", "IP No:", "Admission Date:"
+- Handle multi-line fields by concatenating text logically
+- Ignore watermarks, logos, and irrelevant decorative elements
 
 REQUIRED FIELDS:
-1. provisional_diagnosis - Initial diagnosis made at admission (may be labeled as "Provisional Diagnosis", "Admitting Diagnosis", "Working Diagnosis", or "Impression on Admission")
-2. final_diagnosis - Confirmed diagnosis at discharge (may be labeled as "Final Diagnosis", "Discharge Diagnosis", "Principal Diagnosis", or simply "Diagnosis")
+1. patient_full_name (check for: "Name", "Patient Name", "Patient", title prefixes like Mr./Mrs./Dr.)
+2. age_gender (format: "age / gender" - look for "Age:", "Sex:", "Gender:", "M/F")
+3. mr_no_ip_no (format: "MR No. / IP No." - check "MRN", "Medical Record", "IP No", "IPD No")
+4. admission_date_time (look for: "Admission Date", "Admitted On", "Date of Admission", "Adm Dt/Tm")
+5. discharge_date_time (look for: "Discharge Date", "Discharged On", "Date of Discharge", "Disch Dt/Tm")
+6. admitting_doctor_name (check: "Admitting Doctor", "Consultant", "Treating Doctor", "Dr.")
+7. admitting_doctor_registration_number (look for: "Reg No", "Registration", "R.N.", "Reg.No.", "License No")
+8. discharge_summary_number (check: "Summary No", "DS No", "Document ID", "Report No")
 
-INSTRUCTIONS:
-- Extract diagnoses exactly as documented
-- If diagnosis has multiple conditions, separate with " | " delimiter
-- Distinguish between primary and secondary diagnoses if specified
-- Include ICD codes if present in format: "condition (ICD-code)"
-- Use "NOT_FOUND" if field not present in document
-- Preserve medical terminology and abbreviations
-- For handwritten sections, provide best interpretation
+EXTRACTION RULES:
+- Extract values EXACTLY as they appear (preserve spelling, capitalization, punctuation)
+- Use "NOT_FOUND" for genuinely missing fields
+- For dates: preserve original format (DD/MM/YYYY, MM/DD/YYYY, or any format shown)
+- For age_gender: combine with " / " separator (e.g., "45 / Male" or "32Y / F")
+- For mr_no_ip_no: combine with " / " separator (e.g., "123456 / 789012")
+- If field has multiple values, choose the most complete/authoritative one
+- Remove extra spaces but keep intentional formatting
+- For unclear handwriting: provide best interpretation, don't skip
 
-OUTPUT FORMAT:
+QUALITY CHECKS:
+- Verify name contains alphabetic characters (not just numbers)
+- Ensure dates follow logical patterns (day ≤ 31, month ≤ 12, year realistic)
+- Check MR/IP numbers are numeric or alphanumeric
+- Confirm doctor name includes "Dr." or similar title
+- Validate registration number format (often alphanumeric with special chars)
+
+OUTPUT FORMAT (strict JSON):
 {
-  "provisional_diagnosis": "string or NOT_FOUND",
-  "final_diagnosis": "string or NOT_FOUND"
-}"""
-    
+  "patient_full_name": "string",
+  "age_gender": "string",
+  "mr_no_ip_no": "string",
+  "admission_date_time": "string",
+  "discharge_date_time": "string",
+  "admitting_doctor_name": "string",
+  "admitting_doctor_registration_number": "string",
+  "discharge_summary_number": "string"
+}
+
+CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."""
     response = client.models.generate_content(
         model=f"models/{model_option}",
         contents=[
