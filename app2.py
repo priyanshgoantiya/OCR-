@@ -120,15 +120,19 @@ CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."
     response = client.models.generate_content(
     model=model_option,
     contents=[
-        {
-            "role": "user",
-            "parts": [
-                {"inline_data": {"mime_type": "application/pdf", "data": pdf_bytes}},
-                {"text": prompt}
+        types.Content(
+            role="user",
+            parts=[
+                types.Part(inline_data=types.Blob(
+                    mime_type="application/pdf",
+                    data=pdf_bytes
+                )),
+                types.Part(text=prompt)
             ]
-        }
+        )
     ]
 )
+
 
     
     text = (response.text or "").strip() if response else ""
