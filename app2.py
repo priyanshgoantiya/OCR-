@@ -118,12 +118,12 @@ OUTPUT FORMAT (strict JSON):
 
 CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."""
     response = client.models.generate_content(
-        model=f"models/{model_option}",
-        contents=[
-            pdf_part,
-            prompt,
-        ],
-    )
+    model=f"models/{model_option}",
+    contents=[
+        types.Content(parts=[pdf_part]),
+        types.Content(parts=[types.Part(text=prompt)]),
+    ],
+)
     
     text = (response.text or "").strip() if response else ""
     
