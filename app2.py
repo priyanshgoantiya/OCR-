@@ -120,25 +120,36 @@ OUTPUT FORMAT:
 
 Return ONLY valid JSON.""",
 
-    "past_medical_history": """Extract Past Medical History from hospital document.
+    "past_medical_history": """Extract Past Medical History from hospital document. Focus on OCR enhancement for handwritten and typed text.
 
 REQUIRED FIELD:
-past_medical_history
+* past History
 
-INSTRUCTIONS:
-- Extract ALL past medical conditions exactly as written
-- Preserve medical terminology and abbreviations
-- Concatenate lists with " | " separator
-- Include chronic conditions and surgeries
-- Use "NOT_FOUND" if missing
+EXTRACTION RULES:
+* Extract ALL medical conditions marked as present (checked, ticked, or indicated with "Yes")
+* For table formats: extract conditions where "Yes" is marked in status columns
+* For checkbox formats: extract conditions with checkmarks or ticks
+* For handwritten text: provide best readable interpretation
+* For lists: extract all mentioned conditions
+* Include chronic diseases, surgeries, and relevant medical history
+* Preserve original medical terminology and abbreviations
 
-SEARCH FOR HEADINGS:
-"Past History", "Past Medical History", "PMH", "Medical History"
+SPECIFIC HANDLING:
+* Look for sections: "Past History", "Past Medical History", "PMH", "Medical History"
+* Common conditions: Hypertension, Diabetes, IHD, Tuberculosis, Surgery, Others
+* For "Others" category: extract specific conditions if specified
+* Include duration/timing if mentioned (e.g., "Since When" columns)
 
-OUTPUT FORMAT:
-{ "past_medical_history": "string or NOT_FOUND" }
+TABLE/CHECKBOX PROCESSING:
+1. Identify conditions with positive status (Yes, checked, ticked)
+2. Ignore conditions marked "No" or left blank
+3. Extract condition names exactly as written
+4. Include additional details from "Since When" or notes columns
 
-Return ONLY valid JSON."""
+OUTPUT FORMAT (strict JSON):
+{ "past_medical_history": "extracted conditions or NOT_FOUND" }
+
+Return ONLY valid JSON. No explanations."""
 }
 
 # Process each prompt separately
