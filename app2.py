@@ -95,11 +95,15 @@ try:
     # Correct usage of Part.from_bytes and Part.from_text
     pdf_part = types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf")
     prompt_part = types.Part.from_text(text=prompt)
-
-    response = client.models.generate_content(
-        model=model_option,
-        contents=[pdf_part, prompt_part]
-    )
+    response = client.models.generate_message(
+    model=model_option,
+    messages=[
+        types.Message(
+            role="user",
+            content=[pdf_part, prompt_part]
+        )
+    ]
+)
 
     text = (response.text or "").strip() if response else ""
 
