@@ -1,4 +1,5 @@
 # app.py
+# app.py
 import streamlit as st
 from google import genai
 from google.genai import types
@@ -36,17 +37,17 @@ model_option = st.selectbox(
     help="Best OCR models: gemini-2.0-flash-exp, gemini-2.5-flash, gemini-1.5-flash"
 )
 
-# Check if PDF is uploaded
+# Stop if no PDF
 if not uploaded:
     st.info("Upload a PDF to extract text.")
     st.stop()
 
-# Check if API key is provided
+# Stop if no API key
 if not api_key.strip():
     st.warning("Paste your Gemini API key to proceed.")
     st.stop()
 
-# Read file bytes
+# Read PDF bytes
 pdf_bytes = uploaded.read()
 
 # Initialize Gemini client
@@ -56,16 +57,8 @@ except Exception as e:
     st.error(f"Failed to initialize Gemini client: {e}")
     st.stop()
 
-try:
-    # Correct usage in new google-genai SDK
-    pdf_part = types.Part(
-        inline_data=types.Blob(
-            mime_type="application/pdf", 
-            data=pdf_bytes
-        )
-    )
-    
-    prompt = """Extract patient administrative information from the hospital discharge summary. Apply OCR best practices and return data in JSON format.
+# Define prompt
+prompt = """Extract patient administrative information from the hospital discharge summary. Apply OCR best practices and return data in JSON format.
 
 OCR PROCESSING INSTRUCTIONS:
 - Scan entire document systematically (top to bottom, left to right)
@@ -78,31 +71,23 @@ OCR PROCESSING INSTRUCTIONS:
 - Ignore watermarks, logos, and irrelevant decorative elements
 
 REQUIRED FIELDS:
-1. patient_full_name (check for: "Name", "Patient Name", "Patient", title prefixes like Mr./Mrs./Dr.)
-2. age_gender (format: "age / gender" - look for "Age:", "Sex:", "Gender:", "M/F")
-3. mr_no_ip_no (format: "MR No. / IP No." - check "MRN", "Medical Record", "IP No", "IPD No")
-4. admission_date_time (look for: "Admission Date", "Admitted On", "Date of Admission", "Adm Dt/Tm")
-5. discharge_date_time (look for: "Discharge Date", "Discharged On", "Date of Discharge", "Disch Dt/Tm")
-6. admitting_doctor_name (check: "Admitting Doctor", "Consultant", "Treating Doctor", "Dr.")
-7. admitting_doctor_registration_number (look for: "Reg No", "Registration", "R.N.", "Reg.No.", "License No")
-8. discharge_summary_number (check: "Summary No", "DS No", "Document ID", "Report No")
+1. patient_full_name
+2. age_gender
+3. mr_no_ip_no
+4. admission_date_time
+5. discharge_date_time
+6. admitting_doctor_name
+7. admitting_doctor_registration_number
+8. discharge_summary_number
 
 EXTRACTION RULES:
-- Extract values EXACTLY as they appear (preserve spelling, capitalization, punctuation)
-- Use "NOT_FOUND" for genuinely missing fields
-- For dates: preserve original format (DD/MM/YYYY, MM/DD/YYYY, or any format shown)
-- For age_gender: combine with " / " separator (e.g., "45 / Male" or "32Y / F")
-- For mr_no_ip_no: combine with " / " separator (e.g., "123456 / 789012")
-- If field has multiple values, choose the most complete/authoritative one
+- Extract values EXACTLY as they appear
+- Use "NOT_FOUND" for missing fields
+- For dates: preserve original format
+- For age_gender: combine with " / " separator
+- For mr_no_ip_no: combine with " / " separator
 - Remove extra spaces but keep intentional formatting
-- For unclear handwriting: provide best interpretation, don't skip
-
-QUALITY CHECKS:
-- Verify name contains alphabetic characters (not just numbers)
-- Ensure dates follow logical patterns (day ≤ 31, month ≤ 12, year realistic)
-- Check MR/IP numbers are numeric or alphanumeric
-- Confirm doctor name includes "Dr." or similar title
-- Validate registration number format (often alphanumeric with special chars)
+- For unclear handwriting: provide best interpretation
 
 OUTPUT FORMAT (strict JSON):
 {
@@ -117,57 +102,61 @@ OUTPUT FORMAT (strict JSON):
 }
 
 CRITICAL: Return ONLY valid JSON. No markdown, no explanations, no code blocks."""
+
+# Call Gemini API
+try:
+    pdf_part = types.Part.from_bytes(pdf_bytes, mime_type="application/pdf")
+    prompt_part = types.Part.from_text(prompt)
+
     response = client.models.generate_content(
-    model=model_option,
-    contents=[
-        types.Part.from_text(prompt),
-        types.Part.from_bytes(pdf_bytes, mime_type="application/pdf")
-    ]
-)
+        model=model_option,
+        contents=[pdf_part, prompt_part]
+    )
 
-
-    
     text = (response.text or "").strip() if response else ""
-    
+
     if not text:
         st.warning("No text returned by Gemini.")
     else:
         st.success(f"✅ Text extracted successfully using {model_option}!")
-        
-        # Display and download
+
+        # Display extracted text
         st.subheader("🧾 Extracted Text")
         st.text_area("All text", value=text, height=480)
-        
+
+        # Download extracted text
         st.download_button(
-            "💾 Download text", 
-            data=text, 
-            file_name="extracted_text.txt", 
+            "💾 Download text",
+            data=text,
+            file_name="extracted_text.txt",
             mime="text/plain"
         )
-        
-        # Try to parse as JSON
+
+        # Try to parse JSON
         try:
             parsed_json = json.loads(text)
             st.subheader("📋 Structured Data")
             st.json(parsed_json)
-            
+
             st.download_button(
-                "💾 Download JSON", 
-                data=json.dumps(parsed_json, indent=2), 
-                file_name="extracted_data.json", 
+                "💾 Download JSON",
+                data=json.dumps(parsed_json, indent=2),
+                file_name="extracted_data.json",
                 mime="application/json"
             )
-        except:
+        except json.JSONDecodeError:
             st.info("Output is not valid JSON. Displaying as plain text.")
-            
+
 except Exception as e:
     st.error(f"Gemini request failed: {e}")
-    st.error(f"Try selecting a different model from the dropdown above.")
+    st.error("Try selecting a different model or check your API key.")
     st.stop()
 
+# Tips
 st.markdown("---")
 st.markdown("**Tips:**")
 st.markdown("- **Best for OCR:** gemini-2.0-flash-exp, gemini-2.5-flash")
 st.markdown("- **Fastest:** gemini-1.5-flash-8b")
 st.markdown("- **Most accurate:** gemini-1.5-pro")
 st.markdown("- Make sure your API key is valid and has available quota")
+
