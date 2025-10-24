@@ -227,6 +227,66 @@ OUTPUT FORMAT (strict JSON):
   "other_findings": "string or NOT_RECORDED"
 }
 
+Return ONLY valid JSON. No explanations.""",
+      "treatment_discharge_prompt" : """Extract Treatment on Discharge medications from hospital document. Focus on medication tables and handwritten prescriptions.
+
+REQUIRED FIELDS:
+- medications_list
+- dosage_instructions
+- frequency
+- duration
+- route
+- special_instructions
+
+EXTRACTION RULES:
+- Extract ONLY medication data from "Treatment on Discharge" tables
+- Ignore patient information, doctor details, and administrative data
+- For handwritten prescriptions: provide best medical context interpretation
+- Preserve exact medication names, dosages, and medical abbreviations
+- Capture table structure with columns: Drug Name, Dosage, Frequency, No. of Days, Remark
+- Extract ALL medication rows from the treatment table
+
+SPECIFIC TABLE EXTRACTION:
+- Locate table under "Treatment on Discharge" heading
+- Extract data from all rows with medication information
+- Map table columns to required fields:
+  - "Drug Name" → medications_list
+  - "Dosage" → dosage_instructions  
+  - "Frequency" → frequency
+  - "No. of Days" → duration
+  - "Remark" → special_instructions
+- Preserve original text formatting and abbreviations
+
+HANDWRITTEN PRESCRIPTION HANDLING:
+- Decipher medication names from doctor's handwriting
+- Interpret dosage instructions (mg, ml, tablet forms)
+- Understand frequency codes (1-0-1, 0-0-1, etc.)
+- Capture duration information (number of days)
+- Extract special instructions (AFTER FOOD, etc.)
+
+MEDICATION FORMAT PRESERVATION:
+- Keep original medication names: TAB CEFTUM, TAB PAN D, TAB VOVERON SR, SYP LOOZ
+- Preserve dosage formats: 500mg, 15ml
+- Maintain frequency codes: 1-0-1, 1-0-0, 0-0-1
+- Keep duration as written: 03, 15
+- Retain remarks exactly: AFTER FOOD
+
+TARGET SPECIFIC SECTIONS:
+- "Treatment on Discharge" table only
+- Skip "Discharge Summary" patient information sections
+- Focus exclusively on medication prescription data
+- Extract from ALL pages containing treatment tables
+
+OUTPUT FORMAT (strict JSON):
+{
+  "medications_list": "extracted medications or NOT_FOUND",
+  "dosage_instructions": "extracted dosages or NOT_FOUND",
+  "frequency": "extracted frequencies or NOT_FOUND",
+  "duration": "extracted durations or NOT_FOUND", 
+  "route": "inferred routes or NOT_FOUND",
+  "special_instructions": "extracted remarks or NOT_FOUND"
+}
+
 Return ONLY valid JSON. No explanations."""
 }
 
