@@ -154,7 +154,7 @@ OUTPUT FORMAT (strict JSON):
 { "past_medical_history": "extracted conditions or NOT_FOUND" }
 
 Return ONLY valid JSON. No explanations.""",
-systemic_examination_prompt = """Extract Systemic Examination and Clinical Findings from hospital document. Handle tables, forms, and free text.
+"systemic_examination_prompt" : """Extract Systemic Examination and Clinical Findings from hospital document. Handle tables, forms, and free text.
 
 REQUIRED FIELDS:
 - blood_pressure
