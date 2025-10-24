@@ -48,8 +48,11 @@ except Exception as e:
     st.stop()
 
 # Define all prompts
-prompts = {
+prompts = { 
     "administrative_data": """Extract patient administrative information from the hospital discharge summary. Apply OCR best practices and return data in JSON format.
+
+⚠️ STRICT INSTRUCTION:
+If the page contains a heading 'Discharge Summary', do not extract ANY text from that page under any condition.
 
 REQUIRED FIELDS:
 1. patient_full_name
@@ -67,7 +70,6 @@ INSTRUCTIONS:
 - Preserve original date formats
 - For age_gender use "age / gender" format
 - For mr_no_ip_no combine with " / "
-- If heading "Discharge Summary" is detected, do not extract or interpret any code or unrelated text.
 
 OUTPUT FORMAT:
 {
@@ -83,7 +85,11 @@ OUTPUT FORMAT:
 
 Return ONLY valid JSON.""",
 
+
     "presenting_complaints": """Extract Presenting Complaints from hospital discharge summary.
+
+⚠️ STRICT INSTRUCTION:
+If the page contains a heading 'Discharge Summary', do not extract ANY text from that page under any condition.
 
 REQUIRED FIELD:
 presenting_complaints
@@ -94,7 +100,6 @@ INSTRUCTIONS:
 - Concatenate multiple lines with single space
 - Include duration mentions
 - Use "NOT_FOUND" if missing
-- If heading "Discharge Summary" is detected, ignore any meta-text or page headers.
 
 SEARCH FOR HEADINGS:
 "Chief Complaints", "Presenting Complaints", "Complaints", "History of Presenting Illness"
@@ -104,7 +109,11 @@ OUTPUT FORMAT:
 
 Return ONLY valid JSON.""",
 
+
     "diagnosis": """Extract diagnosis information from hospital discharge summary.
+
+⚠️ STRICT INSTRUCTION:
+If the page contains a heading 'Discharge Summary', do not extract ANY text from that page under any condition.
 
 REQUIRED FIELDS:
 provisional_diagnosis
@@ -116,14 +125,17 @@ INSTRUCTIONS:
 - Include ICD codes if present
 - Preserve medical terminology
 - Use "NOT_FOUND" if missing
-- If heading "Discharge Summary" is detected, skip interpretation text or instructional data.
 
 OUTPUT FORMAT:
 { "provisional_diagnosis": "string or NOT_FOUND", "final_diagnosis": "string or NOT_FOUND" }
 
 Return ONLY valid JSON.""",
 
+
     "past_medical_history": """Extract Past Medical History from hospital document. Focus on OCR enhancement for handwritten and typed text.
+
+⚠️ STRICT INSTRUCTION:
+If the page contains a heading 'Discharge Summary', do not extract ANY text from that page under any condition.
 
 REQUIRED FIELD:
 * past History
@@ -142,7 +154,6 @@ SPECIFIC HANDLING:
 * Common conditions: Hypertension, Diabetes, IHD, Tuberculosis, Surgery, Others
 * For "Others" category: extract specific conditions if specified
 * Include duration/timing if mentioned (e.g., "Since When" columns)
-* If heading "Discharge Summary" is detected, skip unrelated template instructions or footer text.
 
 TABLE/CHECKBOX PROCESSING:
 1. Identify conditions with positive status (Yes, checked, ticked)
@@ -154,7 +165,12 @@ OUTPUT FORMAT (strict JSON):
 { "past_medical_history": "extracted conditions or NOT_FOUND" }
 
 Return ONLY valid JSON. No explanations.""",
-"systemic_examination_prompt" : """Extract Systemic Examination and Clinical Findings from hospital document. Handle tables, forms, and free text.
+
+
+    "systemic_examination_prompt": """Extract Systemic Examination and Clinical Findings from hospital document. Handle tables, forms, and free text.
+
+⚠️ STRICT INSTRUCTION:
+If the page contains a heading 'Discharge Summary', do not extract ANY text from that page under any condition.
 
 REQUIRED FIELDS:
 - blood_pressure
@@ -174,7 +190,7 @@ EXTRACTION RULES:
 - For tables: extract values from appropriate columns
 - For forms: extract filled values next to labels
 - Preserve medical abbreviations and terminology
-- Include units when present (mmhg, /min, %, etc.)
+- Include units when present (mmHg, /min, %, etc.)
 - Capture both normal and abnormal findings
 - Use "NOT_RECORDED" for missing/unfilled fields
 
@@ -196,11 +212,6 @@ SYSTEM EXAMINATION MAPPING:
 - RS, Respiratory System → rs_examination
 - P/A, Abdominal Examination → abdominal_examination
 - Others, Additional Findings → other_findings
-
-CRITICAL INSTRUCTION:
-- If "Discharge Summary" heading is detected on page, skip extraction from that page
-- Focus only on examination and clinical findings sections
-- Search entire document but prioritize examination-specific sections
 
 OUTPUT FORMAT (strict JSON):
 {
