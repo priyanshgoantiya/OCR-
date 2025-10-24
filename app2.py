@@ -228,66 +228,79 @@ OUTPUT FORMAT (strict JSON):
 }
 
 Return ONLY valid JSON. No explanations.""",
-      "treatment_discharge_prompt" : """Extract Treatment on Discharge medications from hospital document. Focus on medication tables and handwritten prescriptions.
+      "treatment_on_discharge": """Extract medication prescription rows from the hospital document's "Treatment on Discharge" table or handwritten treatment section and return a JSON array representing the table rows.
 
-REQUIRED FIELDS:
-- medications_list
-- dosage_instructions
-- frequency
-- duration
-- route
-- special_instructions
+⚠️ COMPULSORY GLOBAL RULES:
+1) Only extract from the section/table titled exactly "Treatment on Discharge". Do NOT extract medication text from pages whose main heading is exactly "Discharge Summary" — skip those pages entirely.
+2) Ignore patient administrative info, headers, footers, doctor signatures, and other non-medication text.
+3) Output MUST be valid JSON only (no extra text or explanation).
 
-EXTRACTION RULES:
-- Extract ONLY medication data from "Treatment on Discharge" tables
-- Ignore patient information, doctor details, and administrative data
-- For handwritten prescriptions: provide best medical context interpretation
-- Preserve exact medication names, dosages, and medical abbreviations
-- Capture table structure with columns: Drug Name, Dosage, Frequency, No. of Days, Remark
-- Extract ALL medication rows from the treatment table
+REQUIRED OUTPUT (table-style JSON array):
+Return JSON with a single key "treatment" containing an array of row objects in the same order as they appear in the table.
 
-SPECIFIC TABLE EXTRACTION:
-- Locate table under "Treatment on Discharge" heading
-- Extract data from all rows with medication information
-- Map table columns to required fields:
-  - "Drug Name" → medications_list
-  - "Dosage" → dosage_instructions  
-  - "Frequency" → frequency
-  - "No. of Days" → duration
-  - "Remark" → special_instructions
-- Preserve original text formatting and abbreviations
+Each row object MUST have these keys:
+- "sr_no"           : if not explicitly given, assign sequentially starting from 1 (e.g., 1, 2, 3…)
+- "drug_name"       : string (preserve exact drug name, e.g., "TAB CEFTUM")
+- "dosage"          : string (preserve format, e.g., "500mg", "15ml")
+- "frequency"       : string (normalize to pattern "X-X-X" where possible, e.g., "1-0-1"; if unreadable use "NOT_FOUND")
+- "no_of_days"      : string or integer (extract numeric days only, e.g., "3", "15"; if not present use "NOT_FOUND")
+- "remark"          : string (preserve remark exactly, e.g., "AFTER FOOD"; if empty use "NOT_FOUND")
 
-HANDWRITTEN PRESCRIPTION HANDLING:
-- Decipher medication names from doctor's handwriting
-- Interpret dosage instructions (mg, ml, tablet forms)
-- Understand frequency codes (1-0-1, 0-0-1, etc.)
-- Capture duration information (number of days)
-- Extract special instructions (AFTER FOOD, etc.)
+EXTRACTION RULES / DETAILS:
+- TABLE SOURCE:
+  * Locate the table directly under a heading that reads "Treatment on Discharge".
+  * Extract ALL medication rows from that table (do not skip blank rows).
+  * Preserve the table order.
+  * If "Sr. No." column is not printed, assign serial numbers manually (1, 2, 3, …).
 
-MEDICATION FORMAT PRESERVATION:
-- Keep original medication names: TAB CEFTUM, TAB PAN D, TAB VOVERON SR, SYP LOOZ
-- Preserve dosage formats: 500mg, 15ml
-- Maintain frequency codes: 1-0-1, 1-0-0, 0-0-1
-- Keep duration as written: 03, 15
-- Retain remarks exactly: AFTER FOOD
+- HANDWRITTEN PRESCRIPTIONS:
+  * Handwriting will be present but clear. Provide the **best medically sensible interpretation** for drug names and dosages.
+  * If multiple plausible readings exist, choose the most likely standard medication name and preserve the original capitalization/abbreviation (e.g., "TAB VOVERON SR").
+  * If uncertain about a token (e.g., ambiguous letters/digits), return "NOT_FOUND" for that field rather than guessing.
 
-TARGET SPECIFIC SECTIONS:
-- "Treatment on Discharge" table only
-- Skip "Discharge Summary" patient information sections
-- Focus exclusively on medication prescription data
-- Extract from ALL pages containing treatment tables
+- FREQUENCY HANDLING:
+  * Frequency is commonly written as codes: "1-0-1", "101", "1 0 1", "110", "011", etc.
+  * Normalize any of these to the dashed format "1-0-1", "1-1-0", "0-1-1", etc.
+  * If frequency is written with spaces or no separators, parse and convert to dashed format.
+  * If frequency is written in words (e.g., "once at night"), convert to the appropriate 3-slot code when unambiguous; otherwise, keep the text as-is.
+  * If frequency cannot be determined, set "frequency": "NOT_FOUND".
 
-OUTPUT FORMAT (strict JSON):
+- DURATION / NO. OF DAYS:
+  * Duration may be written like "x-3 days", "x3days", "03", "15", "for 3 days".
+  * Extract **numeric only** (e.g., "3", "15", "03" → "3").
+  * If multiple durations found, choose the one aligned with the medication row.
+  * If not present or unreadable, return "NOT_FOUND".
+
+- REMARKS:
+  * Preserve remarks exactly as written (e.g., "AFTER FOOD", "BEFORE FOOD"). Use "NOT_FOUND" if empty.
+
+- DOSAGE:
+  * Preserve the dosage token exactly (e.g., "500mg", "15ml", "SR").
+  * If dosage text merges with frequency or duration in handwriting, separate fields per the table column mapping; prefer explicit dosage units (mg, ml, IU, mcg) when present.
+
+- ROUTE (optional):
+  * Do not add a separate route field in this output. (Route inference can be done later if needed; keep this extract strictly matching table columns.)
+
+OUTPUT FORMAT (strict JSON example):
 {
-  "medications_list": "extracted medications or NOT_FOUND",
-  "dosage_instructions": "extracted dosages or NOT_FOUND",
-  "frequency": "extracted frequencies or NOT_FOUND",
-  "duration": "extracted durations or NOT_FOUND", 
-  "route": "inferred routes or NOT_FOUND",
-  "special_instructions": "extracted remarks or NOT_FOUND"
+  "treatment": [
+    {
+      "sr_no": "sr_no or NOT_FOUND",
+      "drug_name": "drug_name or NOT_FOUND",
+      "dosage": "dosage or NOT_FOUND",
+      "frequency": "frequency or NOT_FOUND",
+      "no_of_days": "no_of_days or NOT_FOUND",
+      "remark": "remark or NOT_FOUND"
+    }
+  ]
 }
 
-Return ONLY valid JSON. No explanations."""
+ADDITIONAL NOTES:
+- If the entire "Treatment on Discharge" section is missing, return:
+  { "treatment": "NOT_FOUND" }
+- Always return a JSON object as shown; do NOT include explanatory text, reasoning, or logs.
+
+Return ONLY valid JSON for every document processed."""
 }
 
 # Process each prompt separately
