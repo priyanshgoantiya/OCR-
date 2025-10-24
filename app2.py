@@ -153,6 +153,69 @@ TABLE/CHECKBOX PROCESSING:
 OUTPUT FORMAT (strict JSON):
 { "past_medical_history": "extracted conditions or NOT_FOUND" }
 
+Return ONLY valid JSON. No explanations.""",
+systemic_examination_prompt = """Extract Systemic Examination and Clinical Findings from hospital document. Handle tables, forms, and free text.
+
+REQUIRED FIELDS:
+- blood_pressure
+- pulse_rate
+- respiratory_rate
+- temperature
+- oxygen_saturation
+- cns_examination
+- cvs_examination
+- rs_examination
+- abdominal_examination
+- other_findings
+
+EXTRACTION RULES:
+- Extract values EXACTLY as written in document
+- For handwritten text: provide best readable interpretation
+- For tables: extract values from appropriate columns
+- For forms: extract filled values next to labels
+- Preserve medical abbreviations and terminology
+- Include units when present (mmhg, /min, %, etc.)
+- Capture both normal and abnormal findings
+- Use "NOT_RECORDED" for missing/unfilled fields
+
+SPECIFIC SECTIONS TO SEARCH:
+- "Systemic Examination", "Clinical Findings", "General Examination"
+- "Vital Signs", "Physical Examination", "Clinical Examination"
+- Tables with examination parameters and values
+
+VITAL SIGNS MAPPING:
+- BP, Blood Pressure → blood_pressure
+- Pulse, Pulse Rate → pulse_rate
+- RR, Respiratory Rate → respiratory_rate
+- Temp, Temperature → temperature
+- SpO2, Oxygen Saturation → oxygen_saturation
+
+SYSTEM EXAMINATION MAPPING:
+- CNS, Central Nervous System → cns_examination
+- CVS, Cardiovascular System → cvs_examination
+- RS, Respiratory System → rs_examination
+- P/A, Abdominal Examination → abdominal_examination
+- Others, Additional Findings → other_findings
+
+CRITICAL INSTRUCTION:
+- If "Discharge Summary" heading is detected on page, skip extraction from that page
+- Focus only on examination and clinical findings sections
+- Search entire document but prioritize examination-specific sections
+
+OUTPUT FORMAT (strict JSON):
+{
+  "blood_pressure": "string or NOT_RECORDED",
+  "pulse_rate": "string or NOT_RECORDED",
+  "respiratory_rate": "string or NOT_RECORDED",
+  "temperature": "string or NOT_RECORDED",
+  "oxygen_saturation": "string or NOT_RECORDED",
+  "cns_examination": "string or NOT_RECORDED",
+  "cvs_examination": "string or NOT_RECORDED",
+  "rs_examination": "string or NOT_RECORDED",
+  "abdominal_examination": "string or NOT_RECORDED",
+  "other_findings": "string or NOT_RECORDED"
+}
+
 Return ONLY valid JSON. No explanations."""
 }
 
