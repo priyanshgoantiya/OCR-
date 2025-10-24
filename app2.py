@@ -67,6 +67,7 @@ INSTRUCTIONS:
 - Preserve original date formats
 - For age_gender use "age / gender" format
 - For mr_no_ip_no combine with " / "
+- If heading "Discharge Summary" is detected, do not extract or interpret any code or unrelated text.
 
 OUTPUT FORMAT:
 {
@@ -93,6 +94,7 @@ INSTRUCTIONS:
 - Concatenate multiple lines with single space
 - Include duration mentions
 - Use "NOT_FOUND" if missing
+- If heading "Discharge Summary" is detected, ignore any meta-text or page headers.
 
 SEARCH FOR HEADINGS:
 "Chief Complaints", "Presenting Complaints", "Complaints", "History of Presenting Illness"
@@ -114,6 +116,7 @@ INSTRUCTIONS:
 - Include ICD codes if present
 - Preserve medical terminology
 - Use "NOT_FOUND" if missing
+- If heading "Discharge Summary" is detected, skip interpretation text or instructional data.
 
 OUTPUT FORMAT:
 { "provisional_diagnosis": "string or NOT_FOUND", "final_diagnosis": "string or NOT_FOUND" }
@@ -139,6 +142,7 @@ SPECIFIC HANDLING:
 * Common conditions: Hypertension, Diabetes, IHD, Tuberculosis, Surgery, Others
 * For "Others" category: extract specific conditions if specified
 * Include duration/timing if mentioned (e.g., "Since When" columns)
+* If heading "Discharge Summary" is detected, skip unrelated template instructions or footer text.
 
 TABLE/CHECKBOX PROCESSING:
 1. Identify conditions with positive status (Yes, checked, ticked)
