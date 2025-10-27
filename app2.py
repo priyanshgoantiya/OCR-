@@ -224,7 +224,7 @@ EXTRACTION & NORMALIZATION RULES:
 
 ADMISSION CLAUSE:
 - After the complaint sentence append a single space then:
-  "(hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management.)"
+  "hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management."
 - Use `administrative_data.admitting_doctor_name` if present; otherwise use "NOT_FOUND". Do not re-extract or search for the admitting doctor in this prompt.
 
 CONFIDENCE / FALLBACKS:
@@ -233,7 +233,7 @@ CONFIDENCE / FALLBACKS:
 - Do NOT output any extra fields; only the required JSON object.
 
 OUTPUT FORMAT (exact):
-{ "presenting_complaints": "Patient presented with complaints of <symptom1>, <symptom2> and <symptomN>. (hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management.)" }
+{ "presenting_complaints": "Patient presented with complaints of <symptom1>, <symptom2> and <symptomN> hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management." }
 OR
 { "presenting_complaints": "NOT_FOUND" }
 
