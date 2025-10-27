@@ -95,13 +95,18 @@ SPECIAL FOCUS (explicit instruction):
 FIELD-SPECIFIC STRATEGIES (priority order & heuristics)
 
 A) discharge_date_time (high priority — detailed)
-- On Treatment Sheet pages, extract the value appearing next to the label “Date”.
-- Accepted labels: “Date”, “Discharge Date/Time”, “Discharge Dt/Tm”, “Discharge Dt”.
-- Return the extracted value exactly as printed (e.g., "16/05").
+- On Treatment Sheet pages, extract the **last or most recent date/time** appearing next to or within the heading “Date” — this represents the final entry before discharge.
+- Also check for a **Patient Pending Slip** page: if a field labeled “Date/Time” is present there, capture its value exactly.
+- If both values are found (Treatment Sheet last date and Patient Pending Slip Date/Time), **select the one that is more complete and well-formatted**, i.e., containing both date and time components or better structured (e.g., “15/05/2025 / 14:33:10” preferred over “15/05”).
+- Accepted labels: “Date”, “Discharge Date/Time”, “Discharge Dt/Tm”, “Discharge Dt”, “Date/Time”.
+- Return the extracted value exactly as printed (e.g., "16/05" or "15/05/2025 / 14:33:10").
 
 Fallback rules:
 - If the label exists but OCR partially misreads it, capture the nearest date/time token to that label.
-- If multiple date/time candidates are found, prioritize the one linked to an explicit “Discharge” label.
+- If multiple date/time candidates are found, prioritize:
+  1. The one labeled “Discharge”.
+  2. The last date in the Treatment Sheet section.
+  3. The value from “Patient Pending Slip” labeled “Date/Time”.
 - If ambiguity remains after applying these rules, return "NOT_FOUND".
 
 B) discharge_summary_number (high priority — detailed)
@@ -160,27 +165,24 @@ EXTRA OCR PRACTICES TO IMPROVE ACCURACY:
 - Expand search to adjacent lines and table cells — labels in left column frequently have values in right column cells.
 - Maintain a short dictionary of label variants & common OCR misspellings for each field and apply tolerant matching.
 - Log candidate matches with confidences for debugging; final output must be just the JSON.
+
 EXAMPLES (preserve EXACT formatting):
 - Name : Mr. Arvind Kumar Patel → "patient_full_name": "Mr. Arvind Kumar Patel"
 - Age / Gender : 042 / Male → "age_gender": "042 / Male"
-
 - MR No. / IP No. : MR458721 / IP239847 → "mr_no_ip_no": "MR458721 / IP239847"
-
 - Admission Dt / Tm : 12/05/2025 / 08:45:22 → "admission_date_time": "12/05/2025 / 08:45:22"
-
 - Discharge Dt / Tm : 15/05/2025 / 14:33:10 → "discharge_date_time": "15/05/2025 / 14:33:10"
-
 - Admitting Doctor : Dr. Neha Sharma (Reg.No.: 2015123456) →
-"admitting_doctor_name": "Dr. Neha Sharma", "admitting_doctor_registration_number": "2015123456"
-
-Summary No. : DS-2025-0045891 → "discharge_summary_number": "DS-2025-0045891"
+  "admitting_doctor_name": "Dr. Neha Sharma", "admitting_doctor_registration_number": "2015123456"
+- Summary No. : DS-2025-0045891 → "discharge_summary_number": "DS-2025-0045891"
 
 FINAL NOTE:
-- The **discharge_summary_number** and **discharge_date_time** fields are explicitly prioritized and must be extracted using heading-style detection first (label → immediate right / below). The other fields should use your original pattern/context logic.
-- Return ONLY the JSON object with the exact keys above. No additional text, commentary, or normalization.""",
-
-
-    "presenting_complaints": """Extract Presenting Complaints from hospital discharge summary.
+- The **discharge_summary_number** and **discharge_date_time** fields are explicitly prioritized and must be extracted using heading-style detection first (label → immediate right / below).
+- For **discharge_date_time**, ensure that if both a “Treatment Sheet last date” and a “Patient Pending Slip Date/Time” exist, the more complete and well-formatted one is returned.
+- The other fields should use the original pattern/context logic.
+- Return ONLY the JSON object with the exact keys above. No additional text, commentary, or normalization.
+"""
+,"presenting_complaints": """Extract Presenting Complaints from hospital discharge summary.
 
 ⚠️ STRICT INSTRUCTION:
 If the page contains a heading 'Discharge Summary', do not extract ANY text from that page under any condition.
@@ -322,119 +324,76 @@ OUTPUT FORMAT (strict JSON):
 }
 
 Return ONLY valid JSON. No explanations.""",
-      "treatment_on_discharge": """
-Extract all valid medication entries from hospital documents containing the heading **"TREATMENT SHEET"** or **"Treatment on Discharge"**, and return them as structured JSON.
+      treatment_on_discharge = """Extract medication prescription rows from the hospital document's "Treatment on Discharge" table or handwritten treatment section and return a JSON array representing the table rows.
 
-⚠️ GLOBAL EXTRACTION RULES:
-1. Process only pages that contain the heading **"TREATMENT SHEET"** or **"Treatment on Discharge"** (case-insensitive).
-2. Do NOT extract any information from pages with heading **"Discharge Summary"**.
-3. Ignore administrative information, doctor signatures, checkboxes, and non-medication text.
-4. Exclude any medication rows that are **crossed out / struck through**.
-5. Output must be strictly valid JSON with no explanations or commentary.
+medical_acronyms = [
+    "OD", "BD", "BID", "TDS", "TID", "QID", "HS", "QHS", "SOS", "QOD",
+    "Q4H", "Q6H", "Q8H", "AC", "PC", "STAT", "PRN", "QAM", "QPM", "NPO"
+]
 
----
+⚠️ COMPULSORY GLOBAL RULES:
+1) Locate and extract ONLY from a section whose heading contains the phrase "Treatment on Discharge" (case-insensitive). This includes exact headings like "Treatment on Discharge" AND headings where the phrase appears as part of a larger heading or with adjacent words (e.g., "Treatment on Discharge - Home", "Treatment on Discharge (Doctor's Notes)", or the same phrase appearing inside doctor progress/handwritten notes). Handwritten headings that include the phrase should be treated the same as printed headings. 
+   HOWEVER — if the page's main heading is exactly "Discharge Summary" (case-insensitive exact words), DO NOT EXTRACT ANY TEXT FROM THAT PAGE. Immediately return all fields as "NOT_FOUND". No exceptions.
 
-### ✅ REQUIRED OUTPUT FORMAT:
-Return a JSON object with one key `"treatment"` containing an array of medication rows.
+2) Ignore patient administrative info, headers, footers, doctor signatures, and other non-medication text.
 
-Each row object must contain exactly:
-- `"sr_no"`          : sequential integer (start from 1 if not printed)
-- `"drug_name"`      : exact handwritten or typed medicine name (preserve abbreviations)
-- `"dosage"`         : dose amount or strength (e.g., "500mg", "10ml", "SR")
-- `"frequency"`      : dosage schedule in standard format (e.g., "1-0-1"); normalize where possible
-- `"no_of_days"`     : duration in numeric form only (e.g., "3", "5"); if missing, use `"NOT_FOUND"`
-- `"remark"`         : remarks exactly as written (e.g., "AFTER FOOD", "BEFORE FOOD"); if empty, `"NOT_FOUND"`
+3) Output MUST be valid JSON only (no extra text or explanation).
 
----
+REQUIRED OUTPUT (table-style JSON array): Return JSON with a single key "treatment" containing an array of row objects in the same order as they appear in the table.
 
-### 🔍 EXTRACTION RULES & IMPROVEMENTS:
+Each row object MUST have these keys:
 
-#### 1. SOURCE TABLE / REGION
-- Extract data only from the **table below the heading “TREATMENT SHEET”** or **“Treatment on Discharge”**.
-- Each **horizontal row** represents a separate medication.
-- If “Sr. No.” column is missing, number rows manually as `1, 2, 3, …` in visual order.
+"sr_no" : if not explicitly given, assign sequentially starting from 1 (e.g., 1, 2, 3…). Use strings for serials if the original printed value used strings; otherwise it's acceptable to return numeric serials as integers.
+"drug_name" : string (preserve exact drug name, e.g., "TAB CEFTUM"). If unreadable, use "NOT_FOUND".
+"dosage" : string (preserve format exactly, e.g., "500mg", "15ml", "SR"). If unreadable, use "NOT_FOUND".
+"frequency" : string (see FREQUENCY HANDLING below).
+"no_of_days" : string or integer (extract numeric days only, e.g., "3", "15"; if not present use "NOT_FOUND")
+"remark" : string (preserve remark exactly, e.g., "AFTER FOOD"; if empty use "NOT_FOUND")
 
-#### 2. EXCLUDE CROSSED ROWS
-- If a row (medicine name or full line) is visibly **crossed out**, **ignore it completely**.
-- Only include uncrossed rows in final JSON.
+EXTRACTION RULES / DETAILS:
 
-#### 3. HANDWRITTEN MEDICATIONS
-- Read handwritten medicine names clearly (e.g., “TAB METFORMIN”, “T. UROTONE DS”).
-- Keep abbreviations such as “TAB”, “CAP”, “INJ”, “SYP” as written.
-- If any field is illegible or unclear, return `"NOT_FOUND"` for that field (do not guess).
+TABLE SOURCE:
+- Locate the table/rows directly under any heading that contains the phrase "Treatment on Discharge" (case-insensitive). This covers printed tables, typed headings inside progress notes, and handwritten headings that include the phrase even if other words appear beside it.
+- Extract ALL medication rows from that table (do not skip blank rows).
+- Preserve the table order.
+- If "Sr. No." column is not printed, assign serial numbers manually (1, 2, 3, …).
 
-#### 4. DOSAGE
-- Capture the **dose strength** or unit next to the medicine (e.g., “500mg”, “15ml”, “10mg”).
-- If the dosage is merged with the frequency or remark, separate logically using proximity (column order: Medicine → Dose → Frequency → Duration → Remark).
-- If dosage missing or unclear, set `"dosage": "NOT_FOUND"`.
+HANDWRITTEN PRESCRIPTIONS:
+- Handwriting will be present but clear. Provide the best medically sensible interpretation for drug names and dosages.
+- If multiple plausible readings exist, choose the most likely standard medication name and preserve the original capitalization/abbreviation (e.g., "TAB VOVERON SR").
+- If uncertain about a token (e.g., ambiguous letters/digits), return "NOT_FOUND" for that field rather than guessing.
 
-#### 5. FREQUENCY
-- Normalize shorthand codes like:
-  - `101`, `1 0 1`, `1-0-1` → `"1-0-1"`
-  - `011` → `"0-1-1"`
-  - `OD` → `"1-0-0"`
-  - `BD` → `"1-1-0"`
-  - `TDS` → `"1-1-1"`
-  - `HS` → `"0-0-1"`
-- If written in words (e.g., “once at night”), retain text if unambiguous, else `"NOT_FOUND"`.
+FREQUENCY HANDLING (IMPORTANT):
+- DO NOT convert common medical acronym frequencies to numeric patterns. If the original frequency token exactly matches any entry in the `medical_acronyms` list (case-insensitive match), PRESERVE that token exactly as written (maintain original casing/abbreviation). Examples: "OD", "BD", "BID", "TDS" must remain as-is, not converted to "1-0-0" or similar.
+- For frequency tokens that are numeric patterns (e.g., "101", "1 0 1", "1-0-1", "110", "011"), normalize them to the dashed "X-X-X" format (e.g., "1-0-1", "1-1-0", "0-1-1") when the conversion is unambiguous.
+- If frequency is written in words (e.g., "once at night"), convert to the appropriate 3-slot code only when unambiguous; otherwise preserve the original text.
+- If frequency cannot be determined, set "frequency": "NOT_FOUND".
 
-#### 6. DURATION / NO. OF DAYS
-- Extract numbers from formats like:
-  - `x3days`, `for 3 days`, `5`, `15d`, etc.
-  - Keep numeric only: e.g., `"3"`, `"5"`, `"15"`.
-- If duration missing, set `"no_of_days": "NOT_FOUND"`.
+DURATION / NO. OF DAYS:
+- Duration may be written like "x-3 days", "x3days", "03", "15", "for 3 days".
+- Extract numeric only (e.g., "3", "15", "03" → "3").
+- If multiple durations found, choose the one aligned with the medication row.
+- If not present or unreadable, return "NOT_FOUND".
 
-#### 7. REMARK
-- Extract remarks exactly as written (e.g., “AFTER FOOD”, “BEFORE FOOD”, “WITH WATER”).
-- If absent, `"NOT_FOUND"`.
+REMARKS:
+- Preserve remarks exactly as written (e.g., "AFTER FOOD", "BEFORE FOOD"). Use "NOT_FOUND" if empty.
 
-#### 8. COLUMN ALIGNMENT & OCR LOGIC
-- Column mapping priority (left → right):
-  **Medicine → Dose → Frequency → Duration → Remark**
-- If multiple text blocks align horizontally within a row, map them using their vertical alignment.
+DOSAGE:
+- Preserve the dosage token exactly (e.g., "500mg", "15ml", "SR").
+- If dosage text merges with frequency or duration in handwriting, separate fields per the table column mapping; prefer explicit dosage units (mg, ml, IU, mcg) when present.
 
----
+ROUTE (optional):
+- Do not add a separate route field in this output.
 
-### ⚙️ OUTPUT EXAMPLE:
+OUTPUT FORMAT (strict JSON example):
+{ "treatment": [ { "sr_no": "sr_no or NOT_FOUND", "drug_name": "drug_name or NOT_FOUND", "dosage": "dosage or NOT_FOUND", "frequency": "frequency or NOT_FOUND", "no_of_days": "no_of_days or NOT_FOUND", "remark": "remark or NOT_FOUND" } ] }
 
-{
-  "treatment": [
-    {
-      "sr_no": "1",
-      "drug_name": "TAB METFORMIN",
-      "dosage": "500mg",
-      "frequency": "1-0-1",
-      "no_of_days": "3",
-      "remark": "AFTER FOOD"
-    },
-    {
-      "sr_no": "2",
-      "drug_name": "T. UROTONE DS",
-      "dosage": "1 TAB",
-      "frequency": "1-0-1",
-      "no_of_days": "5",
-      "remark": "BEFORE FOOD"
-    }
-  ]
-}
-
----
-
-### 🚫 IF SECTION NOT FOUND:
-If no valid “TREATMENT SHEET” or “Treatment on Discharge” section is detected,
-return:
-{ "treatment": "NOT_FOUND" }
-
----
-
-### ✅ QUALITY TARGET:
-- Prefer clarity over quantity: only return confident rows.
-- Preserve exact capitalization, spacing, and punctuation of drug names.
-- Never guess unclear tokens.
-- Must exclude crossed or canceled medicines.
-
-Return ONLY valid JSON as per this schema.
+ADDITIONAL NOTES:
+- If the entire "Treatment on Discharge" section is missing (i.e., no heading that contains the phrase "Treatment on Discharge" is found on the page, or only the page-level main heading is exactly "Discharge Summary"), return: { "treatment": "NOT_FOUND" }
+- Always return a JSON object as shown; do NOT include explanatory text, reasoning, or logs.
+- Return ONLY valid JSON for every document processed.
 """
+
 }
 
 # Process each prompt separately
