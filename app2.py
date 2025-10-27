@@ -259,42 +259,69 @@ INSTRUCTIONS:
 OUTPUT FORMAT:
 { "provisional_diagnosis": "string or NOT_FOUND", "final_diagnosis": "string or NOT_FOUND" }
 
-Return ONLY valid JSON.""",
-
-
-    "past_medical_history": """Extract Past Medical History from hospital document. Focus on OCR enhancement for handwritten and typed text.
+Return ONLY valid JSON.""","past_medical_history": """Extract Past Medical History from hospital document. Focus on OCR enhancement for handwritten and typed text.
 
 ⚠️ STRICT INSTRUCTION:
-If the page contains a heading 'Discharge Summary', do not extract ANY text from that page under any condition.
+- If the page contains a heading exactly equal to "Discharge Summary" (case-insensitive exact words), DO NOT EXTRACT ANY TEXT FROM THAT PAGE. Immediately return: {"past_medical_history":"NOT_FOUND"}.
+- The images shown to you are only samples for understanding; do NOT hard-code rules that rely on those exact visuals. Make logic general and robust.
+- Output MUST be valid JSON only (no extra text or explanation).
 
 REQUIRED FIELD:
-* past History
+past_medical_history
 
-EXTRACTION RULES:
-* Extract ALL medical conditions marked as present (checked, ticked, or indicated with "Yes")
-* For table formats: extract conditions where "Yes" is marked in status columns
-* For checkbox formats: extract conditions with checkmarks or ticks
-* For handwritten text: provide best readable interpretation
-* For lists: extract all mentioned conditions
-* Include chronic diseases, surgeries, and relevant medical history
-* Preserve original medical terminology and abbreviations
+GOAL:
+Return a single string listing all past medical conditions that are explicitly indicated as PRESENT in the document (comma-separated). If none confidently present, return "NOT_FOUND".
 
-SPECIFIC HANDLING:
-* Look for sections: "Past History", "Past Medical History", "PMH", "Medical History"
-* Common conditions: Hypertension, Diabetes, IHD, Tuberculosis, Surgery, Others
-* For "Others" category: extract specific conditions if specified
-* Include duration/timing if mentioned (e.g., "Since When" columns)
+PREPROCESSING (apply before extraction):
+- Deskew, set DPI >= 300, denoise, binarize, increase contrast, run layout/line segmentation, and expand bounding boxes for clipped text.
+- Detect table/grid structure and label/value cell boundaries for rows that list conditions and their Yes/No status.
 
-TABLE/CHECKBOX PROCESSING:
-1. Identify conditions with positive status (Yes, checked, ticked)
-2. Ignore conditions marked "No" or left blank
-3. Extract condition names exactly as written
-4. Include additional details from "Since When" or notes columns
+DETECTION RULES (decide whether a condition is PRESENT):
 
-OUTPUT FORMAT (strict JSON):
-{ "past_medical_history": "extracted conditions or NOT_FOUND" }
+For each condition row (e.g., Hypertension, Diabetes, IHD, Tuberculosis, Surgery, Others, etc.) determine presence using the following prioritized signals:
 
-Return ONLY valid JSON. No explanations.""",
+1. Explicit "Yes" token selected:
+   - If the cell labelled "Yes" (or the token "Yes" adjacent to the condition) contains a selection mark (tick ✔, check ✓, filled box, darkened box, dot •, 'x' or 'X', or an overlaid handwritten mark), treat condition as PRESENT.
+   - If the word "Yes" itself is handwritten/typed next to the condition (and not contradicted), treat as PRESENT.
+
+2. No-cell strike-through / negation of "No":
+   - If the "No" cell contains a clear strike-through (a horizontal or diagonal line through the "No" token) that visually negates the "No", and the "Yes" cell is empty, infer condition as PRESENT.
+   - If the "No" cell is crossed out but there is also a mark in the Yes cell, still treat as PRESENT (Yes takes precedence).
+
+3. Mark in condition-name cell indicating selection:
+   - If a mark (tick/X/circle) sits directly on or overlaps the condition name cell in a way consistent with the document's checkstyle (some forms place the mark beside the item instead of in Yes/No columns), treat as PRESENT only if the form's pattern indicates marks imply Yes.
+
+4. Handwritten affirmative text:
+   - If freehand notes next to the condition contain affirmative words ("Yes", "Y", "Present", "√") treat as PRESENT.
+
+5. Ambiguity & contradiction:
+   - If BOTH Yes and No cells show comparable selection marks (e.g., both ticked or both heavily marked) OR there is a conflicting/unclear mark making it impossible to decide, return NOT_FOUND for that specific condition (do not include it).
+   - If selection marks are faint/uncertain and OCR/vision confidence is low, treat that condition as NOT_FOUND.
+
+GENERAL HEURISTICS:
+- Spatial proximity: evaluate marks within the bounding boxes of the Yes/No cells for each row. A mark overlapping a Yes cell counts for Yes; a mark overlapping a No cell counts for No (unless struck-through as above).
+- Visual types considered as selection: ticks, checkmarks, filled squares/circles, 'x', 'X', dots, bold underline, or clear darkening.
+- Strike-through detection: a continuous line passing through the text token (No) is considered a negation of that token.
+- If an "Others" row is marked PRESENT, attempt to extract the handwritten description that follows; include that exact text after the condition name (e.g., "Others: [text]"). If the "Others" description is unreadable, include just "Others" to indicate positive history.
+- Do NOT infer presence from absence of marks. Only include conditions with explicit positive indications per rules above.
+
+POST-PROCESSING & OUTPUT:
+- Aggregate all detected PRESENT conditions into a single comma-separated string in their original printed/handwritten form (normalize obvious OCR spacing issues but preserve medical terms and abbreviations).
+- If duration/timing ("Since when") is present and clearly linked to a condition row, append it in parentheses immediately after that condition (e.g., "Hypertension (since 2015)").
+- If no conditions confidently detected as PRESENT, return: { "past_medical_history": "NOT_FOUND" }
+- Otherwise return: { "past_medical_history": "<Condition1>, <Condition2>, <Condition3>" }
+
+CONFIDENCE & FALLBACKS:
+- Prefer visual evidence (marks) over textual OCR only. Text "No" without a mark must be treated as negative.
+- If a row shows a faint mark and OCR/vision confidence metrics are available, require a minimum confidence threshold to accept it as PRESENT; otherwise treat as NOT_FOUND.
+- If any single row is ambiguous after heuristics, exclude that row rather than risking a false positive. Do not list conditions marked as "No".
+
+OUTPUT FORMAT (exact):
+{ "past_medical_history": "Hypertension, Diabetes, IHD" }
+OR
+{ "past_medical_history": "NOT_FOUND" }
+
+Return ONLY valid JSON. """,
 
 
     "systemic_examination_prompt": """Extract Systemic Examination and Clinical Findings from hospital document. Handle tables, forms, and free text.
