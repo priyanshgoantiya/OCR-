@@ -324,7 +324,7 @@ OUTPUT FORMAT (strict JSON):
 }
 
 Return ONLY valid JSON. No explanations.""",
-      treatment_on_discharge : """Extract medication prescription rows from the hospital document's "Treatment on Discharge" table or handwritten treatment section and return a JSON array representing the table rows.
+      "treatment_on_discharge" : """Extract medication prescription rows from the hospital document's "Treatment on Discharge" table or handwritten treatment section and return a JSON array representing the table rows.
 
 medical_acronyms = [
     "OD", "BD", "BID", "TDS", "TID", "QID", "HS", "QHS", "SOS", "QOD",
