@@ -95,20 +95,14 @@ SPECIAL FOCUS (explicit instruction):
 FIELD-SPECIFIC STRATEGIES (priority order & heuristics)
 
 A) discharge_date_time (high priority — detailed)
-- Primary labels (case-insensitive & allow OCR variants):
-  "Discharge Dt / Tm", "Discharge Dt/Tm", "Discharge Date/Time", "Discharge Date", "Discharge Dt", "Discharge Dt : / Tm", "Date & Time of Discharge"
-  Also accept misspellings: "Dischrge Dt", "Discharge Dt / Trn", "Discharge Df/Tm", etc.
-- Heading-style extraction rule:
-  1. Locate the discharge heading (exact or close variant). If found, capture the token(s) immediately to the right on the same line. If the value is not on same line, capture the first non-empty token on the next line within the same table/header block.
-  2. If value appears as two tokens (date token + time token) on adjacent positions, join them preserving original separator (e.g., "20/03/2025 / 15:57:40").
-- Regex heuristics (use after heading search if needed):
-  - Full date+time pattern: `\b\d{1,2}[\/\-\.\s]\d{1,2}[\/\-\.\s]\d{2,4}\s*[/\|\-]?\s*\d{1,2}:\d{2}(?::\d{2})?\b`
-  - Date-only pattern: `\b\d{1,2}[\/\-\.\s]\d{1,2}[\/\-\.\s]\d{2,4}\b`
-  - Long-form month pattern: `\b\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4}\b` (optionally with time)
-- Spatial heuristic: prefer matches in top-right quadrant near Admission fields. But **only** use spatial preference after confirming label proximity.
-- Fallbacks:
-  - If label is present but OCR garbled the label, still attempt to take the closest date/time token(s).
-  - If multiple date/time candidates found, choose the one with explicit "Discharge" label → nearest to that label → highest OCR confidence. If ambiguity persists, return "NOT_FOUND".
+- On Treatment Sheet pages, extract the value appearing next to the label “Date”.
+- Accepted labels: “Date”, “Discharge Date/Time”, “Discharge Dt/Tm”, “Discharge Dt”.
+- Return the extracted value exactly as printed (e.g., "16/05").
+
+Fallback rules:
+- If the label exists but OCR partially misreads it, capture the nearest date/time token to that label.
+- If multiple date/time candidates are found, prioritize the one linked to an explicit “Discharge” label.
+- If ambiguity remains after applying these rules, return "NOT_FOUND".
 
 B) discharge_summary_number (high priority — detailed)
 - Primary labels (case-insensitive & allow OCR variants):
