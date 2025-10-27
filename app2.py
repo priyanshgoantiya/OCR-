@@ -198,8 +198,8 @@ HIGH-LEVEL GOAL:
 - Produce a single coherent, medically sensible sentence that begins with:
   "Patient presented with complaints of <symptom list>."
 - Immediately after that sentence append the admission clause (inside the same string) exactly like this:
-  " (hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management.)"
-  *Substitute {admitting_doctor_name} from the document's `administrative_data.admitting_doctor_name` value if available; if that field is unavailable or "NOT_FOUND", insert "NOT_FOUND". Do NOT attempt to re-extract admitting doctor here.*
+  " hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management."
+  *Always prefer the admitting_doctor_name value from the document's `administrative_data.admitting_doctor_name` (global/extracted administrative section). If that value is "NOT_FOUND", attempt a targeted, limited re-extraction from the document as a fallback (see ADMIT NAME SOURCE). If still not found, insert "NOT_FOUND".*
 
 SEARCH HEADINGS (case-insensitive):
 "Chief Complaints", "Presenting Complaints", "Complaints", "History of Presenting Illness", or any handwritten/printed variant containing the word "Complaint" or "Complaints".
@@ -222,14 +222,23 @@ EXTRACTION & NORMALIZATION RULES:
 6. Preserve well-known abbreviations (e.g., "SOB", "HTN", "DM") exactly as written **only if** they appear clearly and unambiguously.
 7. Ensure grammatical correctness of the final sentence: prepend "Patient presented with complaints of " before the symptom list; use commas and "and" appropriately; end the sentence with a period before appending the admission clause.
 
+ADMIT NAME SOURCE (how to populate {admitting_doctor_name}):
+- Primary source: use `administrative_data.admitting_doctor_name` (the extracted administrative section). If this field contains a non-"NOT_FOUND" value, substitute that exact string (preserve spacing and punctuation).
+- Fallback (only if administrative_data.admitting_doctor_name == "NOT_FOUND"):
+  1. Search the document's administrative/header cluster (top ~25-40% of pages) and the earliest pages for labels: "Admitting Doctor", "Admitting Dr", "Admitting Doctor :", "Admitted under", or OCR variants (case-insensitive).
+  2. Use label → value proximity (same line, then nearest right/next line) to capture the name exactly as printed. Accept common OCR misspellings of the label but require a confident label match.
+  3. If multiple candidate names found, prefer the one appearing in the document's administrative cluster or the first page-level administrative block.
+  4. If name still ambiguous or low-confidence, set admitting_doctor_name to "NOT_FOUND".
+- Do NOT attempt a broad re-extraction across all pages; only attempt the targeted fallback above. Primary preference is the administrative_data value.
+
 ADMISSION CLAUSE:
 - After the complaint sentence append a single space then:
   "hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management."
-- Use `administrative_data.admitting_doctor_name` if present; otherwise use "NOT_FOUND". Do not re-extract or search for the admitting doctor in this prompt.
+- Use the admitting_doctor_name determined by ADMIT NAME SOURCE above.
 
 CONFIDENCE / FALLBACKS:
 - If the presenting complaints section is present but OCR produces unreadable text and you cannot confidently correct at least the primary symptom, return: {"presenting_complaints":"NOT_FOUND"}.
-- If symptoms extracted but admitting_doctor_name is unavailable, still return the presenting_complaints sentence and set the admitting doctor placeholder to "NOT_FOUND".
+- If symptoms extracted but admitting_doctor_name is unavailable even after fallback, still return the presenting_complaints sentence and set the admitting doctor placeholder to "NOT_FOUND".
 - Do NOT output any extra fields; only the required JSON object.
 
 OUTPUT FORMAT (exact):
@@ -237,7 +246,8 @@ OUTPUT FORMAT (exact):
 OR
 { "presenting_complaints": "NOT_FOUND" }
 
-Return ONLY valid JSON. """,
+Return ONLY valid JSON. """
+,
 
 
     "diagnosis": """Extract diagnosis information from hospital discharge summary.
