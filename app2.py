@@ -182,28 +182,62 @@ FINAL NOTE:
 - The other fields should use the original pattern/context logic.
 - Return ONLY the JSON object with the exact keys above. No additional text, commentary, or normalization.
 """
-,"presenting_complaints": """Extract Presenting Complaints from hospital discharge summary.
+,"presenting_complaints": """Extract Presenting Complaints from hospital clinical pages and return a single JSON object with the required field.
 
-⚠️ STRICT INSTRUCTION:
-If the page contains a heading 'Discharge Summary', do not extract ANY text from that page under any condition.
+CONSTANT:
+hospital_name = "Jupiter Hospital"
+
+⚠️ STRICT INSTRUCTIONS:
+- If the page contains a heading exactly equal to "Discharge Summary" (case-insensitive exact words), DO NOT EXTRACT ANY TEXT FROM THAT PAGE. Immediately return: {"presenting_complaints":"NOT_FOUND"}.
+- Do NOT include illustrative examples in the prompt (avoid bias). Output MUST be valid JSON only (no extra text or explanation).
 
 REQUIRED FIELD:
 presenting_complaints
 
-INSTRUCTIONS:
-- Extract ALL complaint text exactly as written
-- Preserve medical terminology and abbreviations
-- Concatenate multiple lines with single space
-- Include duration mentions
-- Use "NOT_FOUND" if missing
+HIGH-LEVEL GOAL:
+- Produce a single coherent, medically sensible sentence that begins with:
+  "Patient presented with complaints of <symptom list>."
+- Immediately after that sentence append the admission clause (inside the same string) exactly like this:
+  " (hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management.)"
+  *Substitute {admitting_doctor_name} from the document's `administrative_data.admitting_doctor_name` value if available; if that field is unavailable or "NOT_FOUND", insert "NOT_FOUND". Do NOT attempt to re-extract admitting doctor here.*
 
-SEARCH FOR HEADINGS:
-"Chief Complaints", "Presenting Complaints", "Complaints", "History of Presenting Illness"
+SEARCH HEADINGS (case-insensitive):
+"Chief Complaints", "Presenting Complaints", "Complaints", "History of Presenting Illness", or any handwritten/printed variant containing the word "Complaint" or "Complaints".
 
-OUTPUT FORMAT:
-{ "presenting_complaints": "string or NOT_FOUND" }
+INPUT CHARACTERISTICS:
+- Content may be multi-line, bulleted, handwritten, or noisy OCR output.
+- Handwriting may contain spelling/OCR errors.
 
-Return ONLY valid JSON.""",
+PREPROCESSING (apply before textual extraction):
+- Deskew, set DPI >= 300, denoise, binarize, increase contrast.
+- Run layout/line segmentation and expand bounding boxes for clipped text.
+- Use morphological closing to join broken characters.
+
+EXTRACTION & NORMALIZATION RULES:
+1. Locate the presenting complaints block under one of the SEARCH HEADINGS. If multiple such blocks exist, prefer the first clinical "Chief Complaints"/"Presenting Complaints" block on the patient's initial clinical pages (skip pages titled exactly "Discharge Summary").
+2. Extract ALL complaint lines and tokens under that heading. Concatenate multiple lines into a single symptom list separated by commas, using "and" before the last item.
+3. Apply automatic spelling/term normalization using a comprehensive medical dictionary and fuzzy-matching techniques — DO NOT hardcode small correction lists into the prompt. Only perform a correction when the mapping to a standard medical term is medically unambiguous (high-confidence fuzzy match or dictionary lookup). If a token cannot be confidently mapped, retain the original token.
+4. If more than two tokens across the extracted complaints remain ambiguous or unreadable after attempted correction, return: {"presenting_complaints":"NOT_FOUND"}.
+5. Preserve and include duration mentions exactly as printed when present (e.g., "for 3 days", "2 weeks").
+6. Preserve well-known abbreviations (e.g., "SOB", "HTN", "DM") exactly as written **only if** they appear clearly and unambiguously.
+7. Ensure grammatical correctness of the final sentence: prepend "Patient presented with complaints of " before the symptom list; use commas and "and" appropriately; end the sentence with a period before appending the admission clause.
+
+ADMISSION CLAUSE:
+- After the complaint sentence append a single space then:
+  "(hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management.)"
+- Use `administrative_data.admitting_doctor_name` if present; otherwise use "NOT_FOUND". Do not re-extract or search for the admitting doctor in this prompt.
+
+CONFIDENCE / FALLBACKS:
+- If the presenting complaints section is present but OCR produces unreadable text and you cannot confidently correct at least the primary symptom, return: {"presenting_complaints":"NOT_FOUND"}.
+- If symptoms extracted but admitting_doctor_name is unavailable, still return the presenting_complaints sentence and set the admitting doctor placeholder to "NOT_FOUND".
+- Do NOT output any extra fields; only the required JSON object.
+
+OUTPUT FORMAT (exact):
+{ "presenting_complaints": "Patient presented with complaints of <symptom1>, <symptom2> and <symptomN>. (hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management.)" }
+OR
+{ "presenting_complaints": "NOT_FOUND" }
+
+Return ONLY valid JSON. """,
 
 
     "diagnosis": """Extract diagnosis information from hospital discharge summary.
