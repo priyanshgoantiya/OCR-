@@ -49,7 +49,7 @@ except Exception as e:
 
 # Define all prompts
 prompts = 
-    "administrative_data":"""TASK:
+    {"administrative_data":"""TASK:
 Extract patient administrative information from hospital pages and return a JSON object with exactly the REQUIRED FIELDS and format shown below.
 
 REQUIRED FIELDS (exact JSON keys):
@@ -161,7 +161,7 @@ FINAL NOTE ON MEDICAL CONTEXT:
 - Word-for-word fidelity is required for administrative tokens.
 
 RETURN:
-- Output exactly the specified JSON object and nothing else."""
+- Output exactly the specified JSON object and nothing else."""}
 # ,"presenting_complaints": """Extract Presenting Complaints from hospital clinical pages and return a single JSON object with the required field.
 
 # CONSTANT:
