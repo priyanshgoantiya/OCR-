@@ -110,13 +110,12 @@ D) admission_date_time
 - Labels: "Admission Dt / Tm", "Admission Date/Time", "Admission Dt"
 - Capture the value exactly as printed; if split across tokens/lines join preserving separators.
 
-E) discharge_date_time  (PRIORITY)
-- Strategy:
-  1. Prefer Treatment Sheet last/most-recent Date token in the Treatment Sheet heading region.
-  2. If a Patient Pending Slip with "Date/Time" exists, consider that as well.
-  3. If both present, choose the one that is more complete (contains date + time) and better formatted.
-- Accepted labels: "Date", "Discharge Date/Time", "Discharge Dt/Tm", "Discharge Dt", "Date/Time".
-- Preserve exact printed formatting.
+E) discharge_date_time (short — robust)
+- Search candidate regions: Treatment Sheet header(s) first (look for TREATMENT SHEET), then Patient Pending Slip / header bands, then global label search for Date, Date/Time, Discharge Dt/Tm, tolerant to OCR variants.
+- Capture exact nearby substring (same line or immediately below) — keep original punctuation/spacing; do not normalize for output.
+- Score candidates by label proximity, region weight (treatment-sheet high), presence of date(+time), and OCR confidence; if multiple, prefer the latest treatment-sheet date or the most complete (date+time).
+- Validate: ensure discharge ≥ admission when possible; if contradiction or low confidence, discard candidate.
+- If no confident candidate remains, return "discharge_date_time": "NOT_FOUND".
 
 F) admitting_doctor_name
 - Labels: "Admitting Doctor", "Admitting Dr", "Admitting Doctor :"
