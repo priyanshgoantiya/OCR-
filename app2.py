@@ -48,8 +48,7 @@ except Exception as e:
     st.stop()
 
 # Define all prompts
-prompts = 
-    {"administrative_data":"""TASK:
+prompts =  {"administrative_data":"""TASK:
 Extract patient administrative information from hospital pages and return a JSON object with exactly the REQUIRED FIELDS and format shown below.
 
 REQUIRED FIELDS (exact JSON keys):
