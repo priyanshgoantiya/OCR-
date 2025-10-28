@@ -51,6 +51,11 @@ except Exception as e:
 prompts =  {"administrative_data":"""TASK:
 Extract patient administrative information from hospital pages and return a JSON object with exactly the REQUIRED FIELDS and format shown below.
 
+# CONTEXT & MINDSET:
+- You are a medical practitioner analyzing clinical documentation with precision and clinical reasoning
+- Approach this task with medical expertise and attention to clinical accuracy
+- Maintain word-to-word accuracy while ensuring medical coherence
+
 REQUIRED FIELDS (exact JSON keys):
 1. patient_full_name
 2. age_gender
@@ -159,18 +164,15 @@ FINAL NOTE ON MEDICAL CONTEXT:
 - Word-for-word fidelity is required for administrative tokens.
 
 RETURN:
-- Output exactly the specified JSON object and nothing else."""}
-# ,"presenting_complaints": """Extract Presenting Complaints from hospital clinical pages and return a single JSON object with the required field.
+- Output exactly the specified JSON object and nothing else.""",
+            
+"presenting_complaints": """Extract Presenting Complaints from hospital clinical pages and return a single JSON object with the required field.
 
-# CONSTANT:
-# hospital_name = "Jupiter Hospital"
+# CONTEXT & MINDSET:
+- You are a medical practitioner analyzing clinical documentation with precision and clinical reasoning
+- Approach this task with medical expertise and attention to clinical accuracy
+- Maintain word-to-word accuracy while ensuring medical coherence
 
-# ⚠️ STRICT INSTRUCTIONS:
-# - If the page contains a heading exactly equal to "Discharge Summary" (case-insensitive exact words), DO NOT EXTRACT ANY TEXT FROM THAT PAGE. Immediately return: {"presenting_complaints":"NOT_FOUND"}.
-# - Do NOT include illustrative examples in the prompt (avoid bias). Output MUST be valid JSON only (no extra text or explanation).
-
-# REQUIRED FIELD:
-# presenting_complaints
 
 # HIGH-LEVEL GOAL:
 # - Produce a single coherent, medically sensible sentence that begins with:
@@ -179,26 +181,40 @@ RETURN:
 #   " hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management."
 #   *Always prefer the admitting_doctor_name value from the document's `administrative_data.admitting_doctor_name` (global/extracted administrative section). If that value is "NOT_FOUND", attempt a targeted, limited re-extraction from the document as a fallback (see ADMIT NAME SOURCE). If still not found, insert "NOT_FOUND".*
 
+# REQUIRED FIELD:
+# presenting_complaints
+
 # SEARCH HEADINGS (case-insensitive):
 # "Chief Complaints", "Presenting Complaints", "Complaints", "History of Presenting Illness", or any handwritten/printed variant containing the word "Complaint" or "Complaints".
 
 # INPUT CHARACTERISTICS:
-# - Content may be multi-line, bulleted, handwritten, or noisy OCR output.
-# - Handwriting may contain spelling/OCR errors.
+# - Content may be multi-line, bulleted, handwritten, or noisy OCR output
+# - Handwriting may contain spelling/OCR errors
+# - Documents may contain tick marks (✓, ✔, ☑), checkboxes, or handwritten marks indicating selected symptoms
+# - Text may be structured or unstructured with mixed formatting
 
-# PREPROCESSING (apply before textual extraction):
-# - Deskew, set DPI >= 300, denoise, binarize, increase contrast.
-# - Run layout/line segmentation and expand bounding boxes for clipped text.
-# - Use morphological closing to join broken characters.
+# PREPROCESSING & EXTRACTION ENHANCEMENTS:
+# - Deskew, set DPI >= 300, denoise, binarize, increase contrast
+# - Run layout/line segmentation and expand bounding boxes for clipped text
+# - Use morphological closing to join broken characters
+# - Implement tick mark detection algorithms to identify checked symptoms
+# - Use contour analysis to detect checkbox selections and marked items
+# - Apply word-level and character-level recognition for handwritten text
 
 # EXTRACTION & NORMALIZATION RULES:
 # 1. Locate the presenting complaints block under one of the SEARCH HEADINGS. If multiple such blocks exist, prefer the first clinical "Chief Complaints"/"Presenting Complaints" block on the patient's initial clinical pages (skip pages titled exactly "Discharge Summary").
-# 2. Extract ALL complaint lines and tokens under that heading. Concatenate multiple lines into a single symptom list separated by commas, using "and" before the last item.
-# 3. Apply automatic spelling/term normalization using a comprehensive medical dictionary and fuzzy-matching techniques — DO NOT hardcode small correction lists into the prompt. Only perform a correction when the mapping to a standard medical term is medically unambiguous (high-confidence fuzzy match or dictionary lookup). If a token cannot be confidently mapped, retain the original token.
-# 4. If more than two tokens across the extracted complaints remain ambiguous or unreadable after attempted correction, return: {"presenting_complaints":"NOT_FOUND"}.
-# 5. Preserve and include duration mentions exactly as printed when present (e.g., "for 3 days", "2 weeks").
-# 6. Preserve well-known abbreviations (e.g., "SOB", "HTN", "DM") exactly as written **only if** they appear clearly and unambiguously.
-# 7. Ensure grammatical correctness of the final sentence: prepend "Patient presented with complaints of " before the symptom list; use commas and "and" appropriately; end the sentence with a period before appending the admission clause.
+# 2. Extract ALL complaint lines and tokens under that heading, INCLUDING:
+#    - Text adjacent to tick marks or checked boxes
+#    - Handwritten symptoms with spelling variations
+#    - Bulleted or numbered lists of symptoms
+# 3. For tick marks/checkboxes: Extract ONLY the text corresponding to marked/checked items. Ignore unchecked options.
+# 4. Concatenate multiple lines into a single symptom list separated by commas, using "and" before the last item.
+# 5. Apply automatic spelling/term normalization using comprehensive medical dictionaries and fuzzy-matching techniques — DO NOT hardcode small correction lists. Only perform correction when mapping to standard medical terms is medically unambiguous (high-confidence fuzzy match or dictionary lookup).
+# 6. If a token cannot be confidently mapped, retain the original token with minimal correction only for obvious spelling errors.
+# 7. If more than two tokens across the extracted complaints remain ambiguous or unreadable after attempted correction, return: {"presenting_complaints":"NOT_FOUND"}.
+# 8. Preserve and include duration mentions exactly as printed when present (e.g., "for 3 days", "2 weeks").
+# 9. Preserve well-known abbreviations (e.g., "SOB", "HTN", "DM") exactly as written **only if** they appear clearly and unambiguously.
+# 10. Ensure grammatical correctness of the final sentence: prepend "Patient presented with complaints of " before the symptom list; use commas and "and" appropriately; end the sentence with a period before appending the admission clause.
 
 # ADMIT NAME SOURCE (how to populate {admitting_doctor_name}):
 # - Primary source: use `administrative_data.admitting_doctor_name` (the extracted administrative section). If this field contains a non-"NOT_FOUND" value, substitute that exact string (preserve spacing and punctuation).
@@ -209,10 +225,12 @@ RETURN:
 #   4. If name still ambiguous or low-confidence, set admitting_doctor_name to "NOT_FOUND".
 # - Do NOT attempt a broad re-extraction across all pages; only attempt the targeted fallback above. Primary preference is the administrative_data value.
 
-# ADMISSION CLAUSE:
-# - After the complaint sentence append a single space then:
-#   "hence admitted in Jupiter Hospital under care of {admitting_doctor_name} for further management."
-# - Use the admitting_doctor_name determined by ADMIT NAME SOURCE above.
+# WORD-FOR-WORD ACCURACY & MEDICAL PRECISION:
+# - Maintain exact wording from source documents when medical meaning is clear
+# - Apply clinical judgment to interpret ambiguous terms in medical context
+# - Preserve temporal sequences and symptom relationships as documented
+# - Ensure extracted complaints reflect the patient's actual presenting symptoms without interpretation bias
+# - Cross-validate symptom extraction with clinical context when available
 
 # CONFIDENCE / FALLBACKS:
 # - If the presenting complaints section is present but OCR produces unreadable text and you cannot confidently correct at least the primary symptom, return: {"presenting_complaints":"NOT_FOUND"}.
@@ -224,8 +242,7 @@ RETURN:
 # OR
 # { "presenting_complaints": "NOT_FOUND" }
 
-# Return ONLY valid JSON. """
-# ,
+# Return ONLY valid JSON."""}
 
 
 #     "diagnosis": """Extract diagnosis information from hospital discharge summary.
