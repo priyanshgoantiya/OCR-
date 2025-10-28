@@ -48,7 +48,7 @@ except Exception as e:
     st.stop()
 
 # Define all prompts
-prompts = { 
+prompts = 
     "administrative_data":"""TASK:
 Extract patient administrative information from hospital pages and return a JSON object with exactly the REQUIRED FIELDS and format shown below.
 
@@ -434,7 +434,7 @@ RETURN:
 
 # If the entire "Treatment on Discharge" section is missing (i.e., no heading that contains the phrase "Treatment on Discharge" is found on the page, or only the page-level main heading is exactly "Discharge Summary"), return: { "treatment": "NOT_FOUND" }
 # Always return a JSON object as shown; do NOT include explanatory text, reasoning, or logs.
-# Return ONLY valid JSON for every document processed. """ }
+# Return ONLY valid JSON for every document processed. """ 
 
 # Process each prompt separately
 combined_output = {}
