@@ -3,6 +3,8 @@ pypdf
 requests
 google-genai
 requests
+openpyxl
+
 
 
 
