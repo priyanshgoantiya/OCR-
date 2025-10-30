@@ -140,12 +140,12 @@ Return ONLY this valid JSON structure:
 
 # FINAL INSTRUCTION:
 Process the complete “Treatment Given” sheet from the provided Excel workbook. Apply strict pharmaceutical criteria and return only the JSON output. 
-Exclude all consumables, devices, and non-drug items such as needles, soaps, toothbrushes, or implants.
+Exclude all consumables, devices, and non-drug items such as needles, soaps, toothbrushes, or implants."""
 
 # Define prompt dictionary
 prompts = {
     "medication_extraction": medication_extraction_prompt
-}"""
+}
 
 combined_output = {}
 
