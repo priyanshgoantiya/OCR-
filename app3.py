@@ -57,7 +57,44 @@ except Exception as e:
     st.stop()
 
 # Your same medication extraction prompt
-medication_extraction_prompt = """[paste your full medication_extraction_prompt text here]"""
+medication_extraction_prompt = """
+TASK:
+You are a licensed medical practitioner and clinical pharmacist reviewing hospital treatment records from an Excel workbook. Extract ONLY pharmaceutical medications from the sheet named exactly "Treatment Given" (the 3rd sheet in the workbook). Exclude all medical consumables, supplies, and non-medication items.
+
+# CONTEXT & MINDSET:
+- Approach this as a trained pharmacist conducting medication reconciliation.
+- Focus on therapeutic agents with pharmacological action.
+- Maintain precision and accuracy in medication identification.
+
+# EXTRACTION RULES:
+(Use the same INCLUDE / EXCLUDE rules as provided previously.)
+- INCLUDE medications (tablets, injections, syrups, respules, inhalers, IV meds, ointments with API, therapeutic supplements like albumin).
+- EXCLUDE consumables & supplies (implants, sutures, plain IV fluids without added drug, instruments, dressings, plain water for injection, etc).
+
+# IMPORTANT:
+- Look for the column named "DRUG / IMPLANT NAME" in the "Treatment Given" sheet.
+- Extract medication names exactly as they appear.
+- Remove duplicates (list each medication once).
+- Preserve brand and generic names in parentheses when present.
+- Do NOT extract material codes or non-pharma items.
+
+# OUTPUT FORMAT:
+Return ONLY this JSON structure (valid JSON):
+{
+  "medications_extracted": [
+    "MEDICATION NAME 1",
+    "MEDICATION NAME 2"
+  ],
+  "consumables_excluded": [
+    "CONSUMABLE ITEM 1",
+    "CONSUMABLE ITEM 2"
+  ],
+  "total_medications_count": <number>,
+  "total_consumables_excluded_count": <number>
+}
+
+Extract medications now from the provided Excel workbook's "Treatment Given" sheet.
+"""
 
 # Define prompt dictionary
 prompts = {
