@@ -47,7 +47,6 @@ except Exception as e:
     st.error(f"Failed to initialize Gemini client: {e}")
     st.stop()
 
-# Define all prompts
 # Define medication extraction prompt
 medication_extraction_prompt = """
 TASK:
@@ -180,157 +179,92 @@ If NO (it's hardware, diluent, or supply) → EXCLUDE as consumable
 - Do NOT extract material codes (alphanumeric codes in first column)
 
 Extract medications now from the provided Treatment Given document.
-""" 
+"""
+
+# Define all prompts dictionary
+prompts = {
+    "medication_extraction": medication_extraction_prompt,
+    # Add more prompts here as needed
+    # "patient_info": patient_info_prompt,
+    # "diagnosis": diagnosis_prompt,
+}
 
 # Process each prompt separately
 combined_output = {}
-with st.spinner("🔄 Extracting medications from Excel sheet..."):
-            # Prepare full prompt with data
-            full_prompt = f"""
-            Here is the Treatment Given sheet data (3rd sheet from uploaded Excel file):
+
+with st.spinner("Processing document..."):
+    for section_name, prompt_text in prompts.items():
+        try:
+            # Create PDF part for this request
+            pdf_part = types.Part(
+                inline_data=types.Blob(
+                    mime_type="application/pdf",
+                    data=pdf_bytes
+                )
+            )
             
-            {sheet_data}
-            
-            {medication_extraction_prompt}
-            """
-            
-            # Send to Gemini API
+            # Call Gemini
             response = client.models.generate_content(
                 model=f"models/{model_option}",
-                contents=[full_prompt]
+                contents=[pdf_part, prompt_text]
             )
             
-            # Extract response text
             text = (response.text or "").strip() if response else ""
             
-    except Exception as e:
-        st.error(f"❌ Failed to process Excel file: {e}")
-        st.info("💡 Make sure your Excel file has at least 3 sheets and the 3rd one contains Treatment Given data")
-        st.stop()
+            if not text:
+                st.warning(f"No response for {section_name}")
+                combined_output[section_name] = "NOT_FOUND"
+                continue
+            
+            # Display section
+            st.markdown(f"### 📋 {section_name.replace('_', ' ').title()}")
+            
+            # Show raw text
+            with st.expander(f"View raw output - {section_name}"):
+                st.text_area(f"Raw ({section_name})", value=text, height=200, key=f"raw_{section_name}")
+            
+            # Try parse JSON
+            try:
+                parsed = json.loads(text)
+                st.json(parsed)
+                combined_output[section_name] = parsed
+                
+                # Download button
+                st.download_button(
+                    f"💾 Download {section_name}",
+                    data=json.dumps(parsed, indent=2),
+                    file_name=f"{section_name}.json",
+                    mime="application/json",
+                    key=f"download_{section_name}"
+                )
+            except json.JSONDecodeError:
+                st.warning(f"⚠️ {section_name} output is not valid JSON")
+                st.code(text)
+                combined_output[section_name] = {"raw_text": text}
+            
+            st.markdown("---")
+            
+        except Exception as e:
+            st.error(f"Error processing {section_name}: {e}")
+            combined_output[section_name] = {"error": str(e)}
 
-else:
-    st.error("❌ Unsupported file format")
-    st.stop()
+# Show combined results
+st.success(f"✅ Extraction completed using {model_option}!")
 
-# Common processing for both file types
-if not text:
-    st.warning("⚠️ No response from AI model")
-    st.stop()
+st.markdown("## 📊 Combined Results")
+st.json(combined_output)
 
-# Display raw response in expander
-with st.expander("🔍 View raw AI response"):
-    st.text_area("Raw Response", value=text, height=300, key="raw_response")
-
-# Parse JSON response
-try:
-    # Clean markdown code blocks if present
-    if "```json" in text:
-        text = text.split("```json")[1].split("```")[0].strip()
-    elif "```" in text:
-        text = text.split("```")[1].split("```")[0].strip()
-    
-    # Parse JSON
-    result = json.loads(text)
-    
-    # Display success message
-    st.success(f"✅ Extraction completed using {model_option}!")
-    
-    # Display results in two columns
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("### 💊 Medications Extracted")
-        st.metric("Total Medications", result.get("total_medications_count", 0))
-        
-        medications = result.get("medications_extracted", [])
-        if medications:
-            for idx, med in enumerate(medications, 1):
-                st.markdown(f"{idx}. {med}")
-        else:
-            st.info("No medications found")
-    
-    with col2:
-        st.markdown("### 🚫 Consumables Excluded")
-        st.metric("Total Consumables", result.get("total_consumables_excluded_count", 0))
-        
-        consumables = result.get("consumables_excluded", [])
-        if consumables:
-            with st.expander("View excluded items"):
-                for idx, item in enumerate(consumables, 1):
-                    st.markdown(f"{idx}. {item}")
-        else:
-            st.info("No consumables excluded")
-    
-    # Display complete JSON
-    st.markdown("---")
-    st.markdown("## 📊 Complete Results")
-    st.json(result)
-    
-    # Download buttons
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.download_button(
-            "💾 Download JSON",
-            data=json.dumps(result, indent=2),
-            file_name="medication_extraction.json",
-            mime="application/json"
-        )
-    
-    with col2:
-        medications_text = "\n".join(result.get("medications_extracted", []))
-        st.download_button(
-            "📝 Download TXT",
-            data=medications_text,
-            file_name="medications_list.txt",
-            mime="text/plain"
-        )
-    
-    with col3:
-        if medications:
-            df_output = pd.DataFrame({
-                "Sr No": range(1, len(medications) + 1),
-                "Medication Name": medications
-            })
-            csv = df_output.to_csv(index=False)
-            st.download_button(
-                "📊 Download CSV",
-                data=csv,
-                file_name="medications_list.csv",
-                mime="text/csv"
-            )
-
-except json.JSONDecodeError as je:
-    st.warning("⚠️ Could not parse AI response as JSON")
-    st.error(f"JSON Error: {str(je)}")
-    st.code(text)
-
-except Exception as e:
-    st.error(f"❌ Error during processing: {e}")
-    import traceback
-    st.code(traceback.format_exc())
-
-# Help section
-st.markdown("---")
-st.markdown("### 💡 How to Use:")
-st.markdown("""
-**Option 1: Upload PDF**
-- Upload PDF containing Treatment Given data
-- OCR will extract and identify medications
-
-**Option 2: Upload Excel**
-- Download Google Sheet as Excel (File → Download → Microsoft Excel)
-- Upload the Excel file here
-- The 3rd sheet will be automatically processed
-
-**What gets extracted:**
-- ✅ **Medications**: Tablets, injections, syrups, respules, medicated creams/ointments, therapeutic proteins
-- ❌ **Excluded**: Plain IV fluids (NS, DNS, D10%), surgical implants (screws, rods), sutures, medical devices, consumables
-
-**File Type Detection:**
-- PDF: Uses OCR to extract text and identify medications
-- Excel: Reads 3rd sheet directly (Treatment Given)
-""")
+# Download combined JSON
+st.download_button(
+    "💾 Download All Results (Combined JSON)",
+    data=json.dumps(combined_output, indent=2),
+    file_name="combined_extracted_data.json",
+    mime="application/json",
+    key="download_combined"
+)
 
 st.markdown("---")
-st.caption("⚠️ Always verify AI-extracted medications with a healthcare professional")
+st.markdown("**Tips:**")
+st.markdown("- **Best models for OCR:** gemini-2.0-flash-exp, gemini-2.5-flash")
+st.markdown("- **For handwritten text:** Use gemini-2.0-flash-exp")
+st.markdown("- **If JSON fails:** Try different model or check document quality")
