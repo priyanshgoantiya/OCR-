@@ -57,7 +57,7 @@ except Exception as e:
     st.stop()
 
 # Your same medication extraction prompt
-medication_extraction_prompt = TASK:
+medication_extraction_prompt = """TASK:
 You are a licensed medical practitioner and clinical pharmacist conducting medication reconciliation for a patient's hospital stay. Your task is to extract ONLY pharmaceutical medications with pharmacological actions from the Excel sheet named exactly "Treatment Given" (the 3rd sheet in the workbook). Strictly exclude all medical consumables, supplies, implants, and non-medication items.
 
 # CONTEXT & MINDSET:
@@ -145,7 +145,7 @@ Exclude all consumables, devices, and non-drug items such as needles, soaps, too
 # Define prompt dictionary
 prompts = {
     "medication_extraction": medication_extraction_prompt
-}
+}"""
 
 combined_output = {}
 
