@@ -50,7 +50,8 @@ except Exception as e:
 # Define medication extraction prompt
 medication_extraction_prompt = """
 TASK:
-You are a licensed medical practitioner and clinical pharmacist reviewing hospital treatment records. Extract ONLY pharmaceutical medications from the "Treatment Given" document, excluding all medical consumables, supplies, and non-medication items.
+You are a licensed medical practitioner and clinical pharmacist reviewing hospital treatment records. 
+Extract ONLY pharmaceutical medications from the "Treatment Given" document, excluding all medical consumables, supplies, and non-medication items.
 
 # CONTEXT & MINDSET:
 - Approach this as a trained pharmacist conducting medication reconciliation
@@ -180,10 +181,84 @@ If NO (it's hardware, diluent, or supply) → EXCLUDE as consumable
 
 Extract medications now from the provided Treatment Given document.
 """
+general_medication_extraction_prompt = """
+TASK:
+You are a licensed medical practitioner and clinical pharmacist performing medication reconciliation on the Excel workbook. Extract pharmaceutical medications and track consumables from the sheet named exactly "Treatment Given" (3rd sheet). Your primary goal is: (1) list true medications, (2) list consumables/devices (needles, soap, surgical hardware, plain IV fluids, etc.), and (3) surface any items you cannot confidently classify as "uncertain".
 
+# PRIMARY MINDSET:
+- Think like a pharmacist reviewing a Medication Administration Record (MAR).
+- Prioritize patient safety and clinical plausibility.
+- Use both lexical cues (tokens, units, codes) and clinical knowledge (drug suffixes, common brands, APIs) to classify items.
+- Where ambiguity exists, do NOT invent — mark as "uncertain" and provide a short rationale.
+
+# WHERE TO EXTRACT:
+- Read the sheet named "Treatment Given" (3rd sheet).
+- Use the column titled exactly "DRUG / IMPLANT NAME" as the source of truth for each row.
+
+# DECISION LOGIC (applied in order):
+1. **Direct format clues (high-confidence):**
+   - If the item contains dosage form tokens: `INJ`, `INJECTION`, `TAB`, `TABLET`, `CAP`, `CAPSULE`, `SUPP`, `SUPPOSITORY`, `SYR`, `SYRUP`, `SYP`, `RESP`, `RESPULES`, `NEB`, `INHALER`, `GEL`, `OINT`, `CREAM`, `LOTION`, treat as probable medication **unless** the product name clearly identifies a non-drug (e.g., "sterile water for injection", "IV set", "syringe kit").
+2. **Numeric dosing / unit clues:**
+   - Presence of units/strengths like `mg`, `g`, `mcg`, `IU`, `ml`, `MG/ML`, `GM`, `%`, `IU/ML`, or patterns like `1GM`, `40MG/4ML` strongly indicate a medication.
+3. **Device / implant patterns (high-confidence consumable/device):**
+   - If the name contains `KIT`, `SCREW`, `ROD`, `NAIL`, `STENT`, `CONNECTOR`, `PLATE`, `MESH`, `MERSILK`, `SUTURE`, `NEEDLE`, `CANNULA`, `CATHTER`, `DJ STENT`, or size patterns like `5.5MM`, `40MM`, `500MM`, classify as **consumable/device**.
+4. **IV fluid / diluent detection (consumable):**
+   - Exact or close matches to `NS`, `NORMAL SALINE`, `D5%`, `D10%`, `DNS`, `RINGER`, `RL`, `WATER FOR INJ`, `D25%`, `D50%` → **consumable** (plain fluid).
+5. **Topicals, mouthwashes, powders (medication vs consumable):**
+   - If topical/mouthwash/cream contains an API or antiseptic name (e.g., `MUPIROCIN`, `POVIDONE`, `CHLORHEXIDINE`, `BETADINE`, `LIGNOCAINE`), classify as **medication**.
+   - If topical item is generic/brand without API and clearly a hygiene product (e.g., "soap", "moisturizer", "non-medicated lotion"), classify as **consumable**.
+   - If uncertain, put in **uncertain_items** and explain.
+6. **Suffix/prefix heuristic for drug names (helpful when format ambiguous):**
+   - Common drug suffix/prefix cues (if present, increase probability of medication): `-cillin`, `-floxacin`, `-azole`, `-vir`, `-statin`, `-pril`, `-sartan`, `-olol`, `-prazole`, `-dipine`, `-azole`, `-mycin`, `-cycline`, `-navir`, `-mab`, `-nib`, `-zepam`, `-zolam`, `-azole`, `-tidine`, `-cort`, `-sone`, `-azole`.
+7. **Brand mapping and clinical synonyms:**
+   - If brand name is present, use clinical knowledge (e.g., `PANTOCID` -> pantoprazole, `AEQUIMOL` -> paracetamol, `MERONEM/MEROZA/ZAXTER` -> meropenem) to classify as medication.
+8. **Numeric-only / code-only entries:**
+   - If entry looks like only a material code (e.g., `A27054053`) or only numbers/alpha codes with no drug tokens or strengths, classify as **consumable/device** unless surrounding text indicates drug.
+9. **Fallback for ambiguous items:**
+   - If after applying rules the item remains unclear, add it to **uncertain_items** with a brief reason (e.g., "Ambiguous: contains 'POWDER' but no API; possible topical or nutritive product").
+
+# PROCESSING RULES:
+- Extract the exact string from the "DRUG / IMPLANT NAME" column for each row.
+- Remove exact duplicates (keep first occurrence order).
+- Normalize whitespace but preserve casing, brand and parenthetical generic names.
+- Do NOT return material codes separately—only the item string as it appears.
+- Produce counts for each category.
+
+# OUTPUT (STRICT JSON ONLY):
+Return ONLY valid JSON with these keys:
+{
+  "medications_extracted": [
+    "Exact medication name 1",
+    "Exact medication name 2"
+  ],
+  "consumables_excluded": [
+    "Exact consumable/device name 1",
+    "Exact consumable/device name 2"
+  ],
+  "uncertain_items": [
+    {
+      "item": "Exact original string",
+      "reason": "Brief rationale why uncertain"
+    }
+  ],
+  "total_medications_count": <number>,
+  "total_consumables_excluded_count": <number>,
+  "total_uncertain_count": <number>,
+  "clinical_notes": "Concise summary of any heuristic/classification rules you applied or edge cases encountered"
+}
+
+# ADDITIONAL GUIDANCE:
+- Classify by clinical intent: if a product is likely prescribed/administered for a therapeutic effect, prefer medication.
+- If identical item appears multiple times, list it once in medications_extracted or consumables_excluded (do not duplicate).
+- For brand names without obvious API, use suffix/prefix heuristics and common-brand mappings; if still uncertain, list under uncertain_items.
+- Provide short clinical_notes explaining any systematic rules or notable ambiguous clusters (e.g., "Many 'POWDER' entries lacked API; classified as uncertain").
+
+# FINAL INSTRUCTION:
+Now process the full "Treatment Given" sheet (3rd sheet) from the provided Excel workbook. Apply the rules above and return ONLY the JSON output described. Do not output any explanation or additional text.
+"""
 # Define all prompts dictionary
 prompts = {
-    "medication_extraction": medication_extraction_prompt,
+    "medication_extraction": medication_extraction_prompt,"General medication extraction prompt":general_medication_extraction_prompt
     # Add more prompts here as needed
     # "patient_info": patient_info_prompt,
     # "diagnosis": diagnosis_prompt,
