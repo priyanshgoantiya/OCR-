@@ -57,29 +57,73 @@ except Exception as e:
     st.stop()
 
 # Your same medication extraction prompt
-medication_extraction_prompt = """
-TASK:
-You are a licensed medical practitioner and clinical pharmacist reviewing hospital treatment records from an Excel workbook. Extract ONLY pharmaceutical medications from the sheet named exactly "Treatment Given" (the 3rd sheet in the workbook). Exclude all medical consumables, supplies, and non-medication items.
+medication_extraction_prompt = TASK:
+You are a licensed medical practitioner and clinical pharmacist conducting medication reconciliation for a patient's hospital stay. Your task is to extract ONLY pharmaceutical medications with pharmacological actions from the Excel sheet named exactly "Treatment Given" (the 3rd sheet in the workbook). Strictly exclude all medical consumables, supplies, implants, and non-medication items.
 
 # CONTEXT & MINDSET:
-- Approach this as a trained pharmacist conducting medication reconciliation.
-- Focus on therapeutic agents with pharmacological action.
-- Maintain precision and accuracy in medication identification.
+- Think like a pharmacist reviewing a Medication Administration Record (MAR).
+- Focus on identifying substances with active pharmaceutical ingredients (APIs) that are prescribed, dosed, and monitored.
+- Your priority is patient safety — ensure accurate and clinically valid medication identification.
+
+# DEFINITIONS:
+
+## PHARMACEUTICAL MEDICATIONS (INCLUDE):
+✓ Tablets, Capsules, Pills (TAB, CAP)
+✓ Injections with therapeutic agents (antibiotics, analgesics, antivirals, etc.)
+✓ Syrups, Suspensions, and Solutions (SYR)
+✓ Topical preparations with active ingredients (OINT, CREAM, LOTION, GEL)
+✓ IV Medications (with active drug, not plain fluids)
+✓ Therapeutic Supplements (vitamins, minerals, albumin, protein formulations)
+✓ Respiratory Medications (inhalers, respules, nebulizers)
+✓ Biologicals, Vaccines, and Immunomodulators
+
+## CONSUMABLES & SUPPLIES (EXCLUDE):
+✗ Medical devices and implants (stents, catheters, sutures, DJ stents)
+✗ IV fluids without active drug (NS, DNS, RL, D5%, D10%, plain water for injection)
+✗ Surgical instruments, dressings, gauze, gloves
+✗ Needles, syringes, tubing, IV sets
+✗ Diagnostic and contrast agents
+✗ Personal hygiene items (soap, toothpaste, toothbrushes, non-medicated mouthwash)
+✗ Nutritional supplements without therapeutic intent
+✗ Medical equipment and disposables
 
 # EXTRACTION RULES:
-(Use the same INCLUDE / EXCLUDE rules as provided previously.)
-- INCLUDE medications (tablets, injections, syrups, respules, inhalers, IV meds, ointments with API, therapeutic supplements like albumin).
-- EXCLUDE consumables & supplies (implants, sutures, plain IV fluids without added drug, instruments, dressings, plain water for injection, etc).
 
-# IMPORTANT:
-- Look for the column named "DRUG / IMPLANT NAME" in the "Treatment Given" sheet.
-- Extract medication names exactly as they appear.
-- Remove duplicates (list each medication once).
-- Preserve brand and generic names in parentheses when present.
-- Do NOT extract material codes or non-pharma items.
+**INCLUDE Criteria:**
+- Substances with known pharmacological or therapeutic actions
+- Items requiring prescription or medical order
+- Products with clear dosage forms (TAB, CAP, INJ, SYR, OINT, etc.)
+- Brand/generic names indicating drug content
+- Therapeutic supplements used for specific deficiencies
+
+**EXCLUDE Criteria:**
+- Medical devices or implants
+- Plain IV fluids or irrigation solutions
+- Surgical supplies or diagnostic items
+- Personal care and hygiene products
+- General nutritional or protein support without therapeutic indication
+
+**PROCESSING GUIDELINES:**
+- Extract data from the column named "DRUG / IMPLANT NAME"
+- Remove duplicates (list each medication once)
+- Keep brand and generic names intact (with strengths and dosage forms)
+- Ignore material codes or unrelated columns
+- Apply clinical judgment in ambiguous cases
+
+# SPECIAL HANDLING (AMBIGUOUS CASES):
+- INCLUDE: Medicated lotions, antiseptic solutions (e.g., Betadine Gargle, CXT Mouthwash)
+- EXCLUDE: Plain moisturizers, general mouthwash without API
+- INCLUDE: Nutritional or vitamin supplements with therapeutic indication
+- EXCLUDE: Non-prescription dietary supplements
+- INCLUDE: Therapeutic injections (e.g., KIPINEX FORTE 1.5 INJ)
+- EXCLUDE: Plain IV fluids (e.g., NS 100ML, RL INJ 500ML)
+
+# REFERENCE FROM SAMPLE DATA:
+✓ INCLUDE: VIDAMYTIL S 360MG TAB, VALGANCICLOVIR, WYSOLONE, COTRIMOXAZOLE, OPTINEURON INJ
+✗ EXCLUDE: D J STENT (implant), NS 100ML (plain saline)
 
 # OUTPUT FORMAT:
-Return ONLY this JSON structure (valid JSON):
+Return ONLY this valid JSON structure:
 {
   "medications_extracted": [
     "MEDICATION NAME 1",
@@ -90,11 +134,13 @@ Return ONLY this JSON structure (valid JSON):
     "CONSUMABLE ITEM 2"
   ],
   "total_medications_count": <number>,
-  "total_consumables_excluded_count": <number>
+  "total_consumables_excluded_count": <number>,
+  "clinical_notes": "Brief rationale for any ambiguous decisions"
 }
 
-Extract medications now from the provided Excel workbook's "Treatment Given" sheet.
-"""
+# FINAL INSTRUCTION:
+Process the complete “Treatment Given” sheet from the provided Excel workbook. Apply strict pharmaceutical criteria and return only the JSON output. 
+Exclude all consumables, devices, and non-drug items such as needles, soaps, toothbrushes, or implants.
 
 # Define prompt dictionary
 prompts = {
