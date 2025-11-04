@@ -57,94 +57,46 @@ except Exception as e:
     st.stop()
 
 # Your same medication extraction prompt
-medication_extraction_prompt = """TASK:
-You are a licensed medical practitioner and clinical pharmacist conducting medication reconciliation for a patient's hospital stay. Your task is to extract ONLY pharmaceutical medications with pharmacological actions from the Excel sheet named exactly "Treatment Given" (the 3rd sheet in the workbook). Strictly exclude all medical consumables, supplies, implants, and non-medication items.
+hospital_course_prompt = """
+TASK:
+You are a licensed medical practitioner and clinical reviewer. From a medical document (digital, scanned, or handwritten), extract the Hospital Course / Clinical Summary paragraph and the two doctor names. Produce a single **plain text** sentence that follows the exact template below, changing only the two doctor names:
 
-# CONTEXT & MINDSET:
-- Think like a pharmacist reviewing a Medication Administration Record (MAR).
-- Focus on identifying substances with active pharmaceutical ingredients (APIs) that are prescribed, dosed, and monitored.
-- Your priority is patient safety — ensure accurate and clinically valid medication identification.
+Template (exact output format required):
+Patient was admitted with above mentioned complaints and history. All relevant laboratory investigations done (Reports attached to the file). General condition and vitals of the patient closely monitored. Daily consulted by Dr. <SURGEON_OR_DAILY_DOCTOR_NAME>. Fitness for surgery given by Dr. <CONSULTANT_PHYSICIAN_NAME> (Consultant Physician). All preoperative assessment done, patient taken up for surgery.
 
-# DEFINITIONS:
+RULES — what to extract and how:
+1. Locate the Hospital Course / Clinical Summary section using tolerant heading matches such as:
+   - "Hospital Course", "HospitalCourse", "Clinical Summary", "Clinical Course", "Course in Hospital", "Hospital Course / Clinical Summary"
+   Capture the paragraph(s) belonging to that section and use the template above (do NOT change its text except for the two doctor names).
 
-## PHARMACEUTICAL MEDICATIONS (INCLUDE):
-✓ Tablets, Capsules, Pills (TAB, CAP)
-✓ Injections with therapeutic agents (antibiotics, analgesics, antivirals, etc.)
-✓ Syrups, Suspensions, and Solutions (SYR)
-✓ Topical preparations with active ingredients (OINT, CREAM, LOTION, GEL)
-✓ IV Medications (with active drug, not plain fluids)
-✓ Therapeutic Supplements (vitamins, minerals, albumin, protein formulations)
-✓ Respiratory Medications (inhalers, respules, nebulizers)
-✓ Biologicals, Vaccines, and Immunomodulators
+2. Surgeon / Daily consulted doctor (insert as <SURGEON_OR_DAILY_DOCTOR_NAME>):
+ - Labels: "Admitting Doctor", "Admitting Dr", "Admitting Doctor :"
+ - Capture name exactly. If registration number appears on same line/in parentheses, omit it from this field.
+ - If multiple candidate names appear, choose the name closest to the hospital-course or operative header. If still ambiguous or illegible, use "Dr. NOT_FOUND".
 
-## CONSUMABLES & SUPPLIES (EXCLUDE):
-✗ Medical devices and implants (stents, catheters, sutures, DJ stents)
-✗ IV fluids without active drug (NS, DNS, RL, D5%, D10%, plain water for injection)
-✗ Surgical instruments, dressings, gauze, gloves
-✗ Needles, syringes, tubing, IV sets
-✗ Diagnostic and contrast agents
-✗ Personal hygiene items (soap, toothpaste, toothbrushes, non-medicated mouthwash)
-✗ Nutritional supplements without therapeutic intent
-✗ Medical equipment and disposables
+3. Consultant Physician (insert as <CONSULTANT_PHYSICIAN_NAME>):
+   - Search labels: "Consultant Physician:", "Consultant:", "Consultant Dr", "Consultant Physician"
+   - Output exactly as "Dr. <Full Name>" inside the template, then append " (Consultant Physician)" as shown.
+   - If multiple candidates or illegible, use "Dr. NOT_FOUND".
 
-# EXTRACTION RULES:
+4. Handwriting & OCR:
+   - Attempt verbatim transcription where readable. If handwriting or OCR is low-confidence for a name, prefer "Dr. NOT_FOUND" rather than guessing.
+   - Strip registration numbers, material codes, or trailing parenthetical codes from extracted names.
 
-**INCLUDE Criteria:**
-- Substances with known pharmacological or therapeutic actions
-- Items requiring prescription or medical order
-- Products with clear dosage forms (TAB, CAP, INJ, SYR, OINT, etc.)
-- Brand/generic names indicating drug content
-- Therapeutic supplements used for specific deficiencies
+5. Strict output rule:
+   - Return **only one line** of plain text matching the Template exactly (with the two doctor names filled in).
+   - Do NOT output JSON, page numbers, notes, confidence, or any additional text or commentary.
+   - Example valid output (only this single-line sentence is allowed):
+     Patient was admitted with above mentioned complaints and history. All relevant laboratory investigations done (Reports attached to the file). General condition and vitals of the patient closely monitored. Daily consulted by Dr. Sahil Kiran Pethe. Fitness for surgery given by Dr. Vineet Rao (Consultant Physician). All preoperative assessment done, patient taken up for surgery.
 
-**EXCLUDE Criteria:**
-- Medical devices or implants
-- Plain IV fluids or irrigation solutions
-- Surgical supplies or diagnostic items
-- Personal care and hygiene products
-- General nutritional or protein support without therapeutic indication
+If a required doctor name is not found/confidently readable, insert "Dr. NOT_FOUND" in that position (still return the single-line sentence).
+END TASK.
+"""
 
-**PROCESSING GUIDELINES:**
-- Extract data from the column named "DRUG / IMPLANT NAME"
-- Remove duplicates (list each medication once)
-- Keep brand and generic names intact (with strengths and dosage forms)
-- Ignore material codes or unrelated columns
-- Apply clinical judgment in ambiguous cases
-
-# SPECIAL HANDLING (AMBIGUOUS CASES):
-- INCLUDE: Medicated lotions, antiseptic solutions (e.g., Betadine Gargle, CXT Mouthwash)
-- EXCLUDE: Plain moisturizers, general mouthwash without API
-- INCLUDE: Nutritional or vitamin supplements with therapeutic indication
-- EXCLUDE: Non-prescription dietary supplements
-- INCLUDE: Therapeutic injections (e.g., KIPINEX FORTE 1.5 INJ)
-- EXCLUDE: Plain IV fluids (e.g., NS 100ML, RL INJ 500ML)
-
-# REFERENCE FROM SAMPLE DATA:
-✓ INCLUDE: VIDAMYTIL S 360MG TAB, VALGANCICLOVIR, WYSOLONE, COTRIMOXAZOLE, OPTINEURON INJ
-✗ EXCLUDE: D J STENT (implant), NS 100ML (plain saline)
-
-# OUTPUT FORMAT:
-Return ONLY this valid JSON structure:
-{
-  "medications_extracted": [
-    "MEDICATION NAME 1",
-    "MEDICATION NAME 2"
-  ],
-  "consumables_excluded": [
-    "CONSUMABLE ITEM 1",
-    "CONSUMABLE ITEM 2"
-  ],
-  "total_medications_count": <number>,
-  "total_consumables_excluded_count": <number>,
-  "clinical_notes": "Brief rationale for any ambiguous decisions"
-}
-
-# FINAL INSTRUCTION:
-Process the complete “Treatment Given” sheet from the provided Excel workbook. Apply strict pharmaceutical criteria and return only the JSON output. 
-Exclude all consumables, devices, and non-drug items such as needles, soaps, toothbrushes, or implants."""
 
 # Define prompt dictionary
 prompts = {
-    "medication_extraction": medication_extraction_prompt
+    "hospital_course_prompt": hospital_course_prompt
 }
 
 combined_output = {}
