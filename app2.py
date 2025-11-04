@@ -54,64 +54,57 @@ TASK (high level)
 From the provided medical document (may contain printed text, scanned pages, and handwriting), extract two pieces of clinical information:
 
   A) Hospital Course / Clinical Summary paragraph
-  B) Operation Note / Procedure Details paragraph (also called "Procedure details" or "Operation Note")
+  B) Operation Note / Procedure Details paragraph
 
 Produce two outputs:
-  1. Two plain-text paragraphs (human-readable). Each paragraph must be a short, coherent, clinically-sensible paragraph assembled from the original text. Do NOT invent clinical facts; only rephrase/merge tokens found in the document. If any field is missing or unreadable, insert the token "NOT_FOUND" in that paragraph where the missing element would appear.
-  2. A JSON object (exact schema below) specifying the extracted text and metadata (page numbers and extracted doctor names).
+  1. Two plain-text paragraphs (human-readable). Each must be a short, coherent, clinically-sensible paragraph assembled only from text found in the document. Do NOT invent clinical facts; you may only correct obvious single-word OCR errors for common medical terms (see Allowed Corrections below). If a required name or phrase is unreadable or absent, insert "NOT_FOUND" at that position.
+  2. A JSON object (exact schema shown below) specifying the extracted text and page numbers and extracted doctor names.
 
-IMPORTANT PRINCIPLES (follow in order)
-1. Conservative extraction: if a name or phrase is illegible or low-confidence, use "NOT_FOUND". Do NOT hallucinate.
-2. Preserve word-to-word accuracy where readable; where text is fragmented (handwriting lines), merge logically to make a single coherent sentence/paragraph while keeping original words.
-3. Strip registration numbers, material codes, trailing parentheticals, and numeric item-codes from extracted person names.
-4. Provide page numbers when you can locate the text; if not found, set page number to -1.
+PRINCIPLES (order of priority)
+1. **Conservative extraction:** never hallucinate. If illegible, use "NOT_FOUND".
+2. **Preserve source tokens** where readable. If text fragments occur across lines, merge logically but keep original words.
+3. **Name normalization:** strip registration numbers, trailing codes or parentheticals from person names. Format names exactly as `Dr. First [Middle] Last`.
+4. **Page numbers:** return the page number where the heading or main block appears; if not located, use -1.
 
-HOW TO FIND EACH SECTION
+HOW TO LOCATE & EXTRACT
 - Hospital Course / Clinical Summary:
-  Search for headings or tolerant variants: "Hospital Course", "Clinical Summary", "Clinical Course", "Course in Hospital", "Hospital Course / Clinical Summary", "HospitalCourse".
-  Capture the paragraph(s) under that heading and condense/merge into a single short paragraph describing: admission reason, investigations, monitoring, daily consultant/surgeon name, consultant physician name (fitness for surgery), preop assessment, and disposition at surgery/time of operation (if present).
+  Search tolerant headings: "Hospital Course", "HospitalCourse", "Clinical Summary", "Clinical Course", "Course in Hospital", "Hospital Course / Clinical Summary". Extract the paragraph(s) under that heading and condense into one short paragraph describing admission reason, investigations, monitoring, daily consultant/surgeon, consultant physician (fitness for surgery), pre-op assessment, and disposition at surgery/time of operation (if present).
 
 - Operation Note / Procedure Details:
-  Search for headings/labels: "Operation Note", "Operative Notes", "Procedure details", "Procedure", "Surgery", "Operative Details".
-  Capture handwritten or printed operation notes / procedure descriptions (including immediate postop state, catheter/foley/irrigation notes, complications) and merge into a concise paragraph that reads medically (one paragraph, preserve original tokens and order as much as possible).
+  Search headings/labels: "Operation Note", "Operative Notes", "Procedure details", "Procedure", "Surgery", "Operative Details". Capture handwritten or printed operation notes (including catheter/foley/irrigation notes, immediate postop state) and merge into one concise paragraph that reads medically. If no operation note exists, output exactly: NOT_FOUND
 
-DOCTOR NAMES (formatting rules)
-- Surgeon / Daily-consulted Doctor: format exactly as `Dr. <Full Name>` (example `Dr. Sahil Kiran Pethe`).
-  Candidate label cues: "Surgeon:", "Operative Surgeon", "Daily consulted by", "Consulted by", "Admitting Doctor", "Dr."
-  If multiple candidates near hospital-course region, choose the name closest to the Hospital Course or Operative header. If ambiguous/unreadable → `Dr. NOT_FOUND`.
+DOCTOR NAME RULES (use proximity & label cues)
+- **Surgeon / Daily-consulted Doctor:** choose candidate named nearest to Hospital Course or Operation heading. Label cues: "Surgeon:", "Operative Surgeon", "Daily consulted by", "Consulted by", "Admitting Doctor", "Dr." Format: `Dr. <Full Name>`; if ambiguous or unreadable → `Dr. NOT_FOUND`.
+- **Consultant Physician:** label cues: "Consultant Physician:", "Consultant:", "Fitness for surgery given by", "Fitness for surgery". Format: `Dr. <Full Name> (Consultant Physician)`; if ambiguous/unreadable → `Dr. NOT_FOUND (Consultant Physician)`.
 
-- Consultant Physician: format as `Dr. <Full Name> (Consultant Physician)`.
-  Candidate label cues: "Consultant Physician:", "Consultant:", "Consultant Dr", "Fitness for surgery given by"
-  If ambiguous/unreadable → `Dr. NOT_FOUND (Consultant Physician)`.
+ALLOWED OCR CORRECTIONS (only these single-token / word fixes)
+- You MAY correct obvious OCR misspellings of common terms: e.g., urethanotomy→urethrotomy, uretheric→ureteric, hematura→hematuria, trabeculated→trabeculated, Foley→Foley, catheter→catheter, TURP→TURP, OIU→OIU, BNI→BNI, lobe→lobe, bladder→bladder, irrigation→irrigation.
+- Do NOT invent procedures, durations, outcomes, or dates. Corrections must be minimal, token-level, and preserve clinical meaning.
 
-OUTPUT SPECIFICATIONS — PLAIN TEXT
-Return exactly two paragraphs separated by a blank line. Do NOT return any additional explanatory text.
+OUTPUT FORMAT (exact)
+1) Return **two plain-text paragraphs** only (separated by one blank line). No extra commentary.
 
-Paragraph 1 — Hospital Course (single paragraph):
-Example structure to follow (you must produce real extracted names/phrases or NOT_FOUND):
-Patient was admitted with the above mentioned complaints and history. All relevant laboratory investigations were performed (reports attached). General condition and vitals of the patient were closely monitored. Daily consulted by Dr. <SURGEON_OR_DAILY_DOCTOR_NAME>. Fitness for surgery given by Dr. <CONSULTANT_PHYSICIAN_NAME> (Consultant Physician). All preoperative assessment was completed and the patient was taken up for surgery.
+Paragraph 1 — Hospital Course (single paragraph). Example structure to follow:
+Patient was admitted with the above mentioned complaints and history. All relevant laboratory investigations were performed (reports attached). General condition and vitals of the patient were closely monitored. Daily consulted by Dr. <SURGEON_NAME>. Fitness for surgery given by Dr. <CONSULTANT_NAME> (Consultant Physician). All preoperative assessment was completed and the patient was taken up for surgery.
 
-Paragraph 2 — Operation Note / Procedure Details (single paragraph):
-Concise summary of the operative/procedure notes (word-to-word where possible). Include operative procedure performed, key intraoperative findings, catheter/irrigation/foley details, immediate postop status and disposition. If no operation/procedure details present, output exactly: NOT_FOUND
+Paragraph 2 — Operation Note / Procedure Details (single paragraph). If missing, output exactly:
+NOT_FOUND
 
-OUTPUT SPECIFICATIONS — JSON
-Return the following JSON object **after** the two paragraphs (separated by a blank line). The JSON must be the ONLY JSON block returned (no extra commentary). Keys and types must match exactly:
+2) After the two paragraphs (separated by one blank line), output a single JSON block (and nothing else) with this exact schema:
 
 {
-  "hospital_course_text": "<Exact paragraph 1 above as a single string>",
+  "hospital_course_text": "<exact paragraph 1 here>",
   "hospital_course_page": <page_number_or_-1>,
-  "operation_note_text": "<Exact paragraph 2 above as a single string or 'NOT_FOUND'>",
+  "operation_note_text": "<exact paragraph 2 here or 'NOT_FOUND'>",
   "operation_note_page": <page_number_or_-1>,
   "surgeon_name": "Dr. <Full Name>" or "Dr. NOT_FOUND",
   "consultant_physician_name": "Dr. <Full Name> (Consultant Physician)" or "Dr. NOT_FOUND (Consultant Physician)"
 }
 
-ADDITIONAL RULES & EXAMPLES
-- Names MUST use prefix "Dr." and full name (first + middle + last when present).
-- If you find multiple pages containing pieces of the hospital course, merge them into the paragraph and set hospital_course_page to the page number where the main heading appears; if the heading isn't available but the text is found across pages, set page to the earliest page where related sentences appear.
-- For operation_note_page, set to the page containing the handwritten Operation Note / Procedure details (prefer the page where the heading appears). If only handwritten body exists without heading, use that page number.
-- Do not output intermediate lists, confidence scores, or other metadata.
-- Return the plain text paragraphs first (two paragraphs separated by one blank line), then the JSON object (on a new line).
+ADDITIONAL INSTRUCTIONS
+- If you find multiple candidate names, choose the one closest to the relevant heading (within ±3 lines). If distances tie, return `Dr. NOT_FOUND`.
+- If you detect page numbers in the raw OCR (e.g., "Page 2"), use those. If not, return -1 for page.
+- Output must be strictly: 2 paragraphs, one blank line, then the JSON block. No extra text.
 
 END TASK.
 """
