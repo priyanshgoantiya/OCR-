@@ -47,148 +47,15 @@ except Exception as e:
     st.error(f"Failed to initialize Gemini client: {e}")
     st.stop()
 
-# Define medication extraction prompt
-# medication_extraction_prompt = """
-# TASK:
-# You are a licensed medical practitioner and clinical pharmacist reviewing hospital treatment records. 
-# Extract ONLY pharmaceutical medications from the "Treatment Given" document, excluding all medical consumables, supplies, and non-medication items.
-
-# # CONTEXT & MINDSET:
-# - Approach this as a trained pharmacist conducting medication reconciliation
-# - Apply clinical knowledge to distinguish medications from medical supplies
-# - Focus on therapeutic agents with pharmacological action
-# - Maintain precision and accuracy in medication identification
-
-# # EXTRACTION RULES:
-
-# ## INCLUDE (Medications - Pharmacological Agents):
-# ✓ Tablets, Capsules, Pills (TAB, CAP)
-# ✓ Injections (INJ) - antibiotics, analgesics, vitamins, etc.
-# ✓ Syrups, Suspensions, Solutions (SYR)
-# ✓ Respules, Nebulizers with active drugs (NEB, RESP, RESPULES)
-# ✓ Inhalers with pharmaceutical compounds (INH)
-# ✓ Suppositories with active ingredients (SUPP)
-# ✓ Medicated creams, ointments, gels (OINT, CREAM with drug compounds)
-# ✓ Medicated mouthwash/gargle (with active pharmaceutical ingredients like Betadine, CXT)
-# ✓ Medicated dusting powders (POWDER with antifungal/antibiotic agents)
-# ✓ IV medications with active drugs (Paracetamol IV, Pantoprazole IV, etc.)
-# ✓ Enemas with medication (e.g., Duphalac Enema)
-# ✓ Protein supplements prescribed as therapeutic nutrition (Albumin, Fitlivon)
-
-# ## EXCLUDE (Consumables & Medical Supplies):
-# ✗ Surgical implants (screws, rods, connectors, plates, prosthetics)
-# ✗ Sutures and surgical threads (Mersilk, etc.)
-# ✗ Needles, syringes, cannulas, IV sets
-# ✗ Plain IV fluids WITHOUT medication: NS, DNS, D5%, D10%, D25%, D50%, Ringer's Lactate, Water for Injection, Aqua, Saline
-# ✗ Bandages, gauze, dressings
-# ✗ Surgical instruments (ice scrapper, etc.)
-# ✗ Soap, sanitizers, hand wash
-# ✗ Toothbrushes, toothpaste
-# ✗ Cotton, swabs, gloves, masks
-# ✗ Catheters, tubes
-# ✗ Medical devices and equipment
-# ✗ Non-medicated powders (plain talcum, cornstarch)
-# ✗ Anesthetic gases (Sevoflurane) used during surgery
-
-# ## CRITICAL EXAMPLES FROM REAL DATA:
-
-# ✓ INCLUDE (Medications):
-# - "PARACETAMOL INJ 1GM/100ML (AEQUIMOL)" → Analgesic medication
-# - "MEROPENAM INJ 1GM (ZAXTER)" → Antibiotic
-# - "PANTOPRAZOLE 40MG (PANTOCID) INJ" → Proton pump inhibitor
-# - "BUDECORT RESPULES 0.5MG" → Corticosteroid for inhalation
-# - "DUOLIN 3 RESPULES" → Bronchodilator
-# - "DULCOFLEX 10MG SUPP (ADULT)" → Laxative suppository
-# - "FLUCONAZOLE (GOCAN) 200MG/100ML INJ" → Antifungal
-# - "TEICOPLANIN (T-PLANIN) 400MG INJ" → Antibiotic
-# - "SHELCAL-500 TAB 15'S" → Calcium supplement
-# - "LONAZEP MD 0.5 TAB" → Clonazepam (anxiolytic)
-# - "SERENACE 0.5MG (20TAB)" → Haloperidol (antipsychotic)
-# - "RANTAC 150 (30 TAB)" → Ranitidine (H2 blocker)
-# - "CXT MOUTH WASH 100ML" → Chlorhexidine mouthwash (antiseptic)
-# - "MUPREVENT OINT 5GM" → Mupirocin ointment (antibiotic)
-# - "BETADINE OINT 20GM" → Povidone-iodine (antiseptic)
-# - "DUPHALAC ENEMA" → Lactulose enema (laxative)
-# - "DUPHALAC SYP 250ML" → Lactulose syrup
-# - "KESOL-20 SYP" → Potassium supplement
-# - "FITLIVON POWDER (500GM)" → Nutritional supplement (if prescribed therapeutically)
-# - "ALBUREL 20% INJ 100ML" → Human albumin (therapeutic protein)
-# - "HUMAN ALBUMIN 20% 50ML (ZENALB)" → Therapeutic protein
-# - "RESTYL 0.25MG TAB" → Alprazolam (anxiolytic)
-# - "PRUVICT 2MG TAB" → Prucalopride (GI motility)
-# - "PARASOFT CREAM 200GM" → Medicated skin cream
-# - "LIGNOCAINE (LOCAM) 30GM GEL" → Local anesthetic gel
-
-# ✗ EXCLUDE (Consumables & Supplies):
-# - "NS 100ML (AQUA)" → Plain normal saline (diluent)
-# - "NS INJ 500ML (EASY PORT)" → Plain saline
-# - "NS INJ 500ML (STERIPORT)" → Plain saline
-# - "NS 100 ML INJ (STERIPORT)" → Plain saline
-# - "WATER FOR INJ 10ML" → Diluent only
-# - "D10% 500ML(STERIPORT)" → Plain dextrose solution
-# - "D5% INJ 250ML (NIRLIFE)" → Plain dextrose
-# - "D25% INJ 100ML" → Plain dextrose
-# - "D50% 25ML INJ LIFECARE" → Plain dextrose
-# - "NS INJ 1000ML (STERIPORT)" → Plain saline
-# - "CROSSLINK CONNECTOR TIT 40/53MM AOSYS" → Surgical implant
-# - "POLYAXIAL SCREW DUAL THREAD TIT 5.5MM X 40MM AOSYS" → Surgical implant
-# - "SPINAL ROD TIT 5.5MM X 500MM AOSYS" → Surgical implant
-# - "MERSILK NW5028 26MM 3/8 RC 3-0 JJ" → Surgical suture
-# - "SEVITRUE (SEVOFLURANE) 250ML" → Anesthetic gas (exclude)
-
-# ## IMPORTANT DISTINCTIONS:
-
-# **Human Albumin**: INCLUDE (therapeutic protein used for volume expansion, hypoalbuminemia)
-# **Plain NS/Saline/Water**: EXCLUDE (used only as diluent/carrier)
-# **Surgical Hardware**: EXCLUDE (screws, rods, connectors, plates are medical devices, not medications)
-# **Sutures**: EXCLUDE (surgical materials)
-
-# # OUTPUT FORMAT:
-
-# Return ONLY this JSON structure:
-
-# {
-#   "medications_extracted": [
-#     "MEDICATION NAME 1",
-#     "MEDICATION NAME 2"
-#   ],
-#   "consumables_excluded": [
-#     "CONSUMABLE ITEM 1",
-#     "CONSUMABLE ITEM 2"
-#   ],
-#   "total_medications_count": <number>,
-#   "total_consumables_excluded_count": <number>
-# }
-
-# # DECISION CRITERIA:
-
-# For each item in the "DRUG / IMPLANT NAME" column, ask yourself:
-# 1. Does this have therapeutic/pharmacological action on the patient?
-# 2. Does it contain an active pharmaceutical ingredient (API)?
-# 3. Would a pharmacist dispense this as a medication?
-# 4. Is it prescribed for treatment/prevention/diagnosis of disease?
-
-# If YES to above questions → INCLUDE as medication
-# If NO (it's hardware, diluent, or supply) → EXCLUDE as consumable
-
-# # SPECIAL INSTRUCTIONS:
-
-# - Look for the column named "DRUG / IMPLANT NAME" in the document
-# - Extract medication names exactly as they appear
-# - Remove duplicates (same medication appearing multiple times should be listed once)
-# - Preserve brand names and generic names in parentheses when present
-# - Do NOT extract material codes (alphanumeric codes in first column)
-
-# Extract medications now from the provided Treatment Given document.
-# """
-general_medication_extraction_prompt=""""You are a licensed medical practitioner and clinical reviewer. From this medical document (digital, scanned, or handwritten), extract the Hospital Course / Clinical Summary paragraph and the two doctor names. 
+# Define general medication extraction prompt
+general_medication_extraction_prompt = """You are a licensed medical practitioner and clinical reviewer. From this medical document (digital, scanned, or handwritten), extract the Hospital Course / Clinical Summary paragraph and the two doctor names. 
 
 Produce a single **plain text** sentence that follows this exact format, changing only the two doctor names:
 
 Patient was admitted with above mentioned complaints and history. All relevant laboratory investigations done (Reports attached to the file). General condition and vitals of the patient closely monitored. Daily consulted by Dr. <SURGEON_OR_DAILY_DOCTOR_NAME>. Fitness for surgery given by Dr. <CONSULTANT_PHYSICIAN_NAME> (Consultant Physician). All preoperative assessment done, patient taken up for surgery.
 
 RULES:
-- Identify “Hospital Course” or “Clinical Summary” section.
+- Identify "Hospital Course" or "Clinical Summary" section.
 - Replace only the two doctor names in the sentence above.
 - Surgeon/Daily Doctor:
   * Labels: "Admitting Doctor", "Surgeon", "Daily consulted by"
@@ -196,7 +63,7 @@ RULES:
 - Consultant Physician:
   * Labels: "Consultant Physician", "Consultant Dr"
   * Format: Dr. <Full Name> (Consultant Physician)
-- If name not found or unreadable → use “Dr. NOT_FOUND”.
+- If name not found or unreadable → use "Dr. NOT_FOUND".
 - Do NOT output anything else.
 - Output this single line as plain text.
 
@@ -207,12 +74,11 @@ Additionally, return the same information in JSON format:
   "consultant_physician_name": "<name>"
 }
 END TASK."""
-# Define all prompts dictionary
-prompts = {"General medication extraction prompt":general_medication_extraction_prompt}
-    # "medication_extraction": medication_extraction_prompt,
-    # Add more prompts here as needed
-    # "patient_info": patient_info_prompt,
-    # "diagnosis": diagnosis_prompt,
+
+# Define all prompts dictionary - FIXED: Added opening brace
+prompts = {
+    "General medication extraction prompt": general_medication_extraction_prompt
+}
 
 # Process each prompt separately
 combined_output = {}
