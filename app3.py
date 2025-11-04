@@ -1,14 +1,15 @@
-# app_excel.py
+# app_pdf.py
 import streamlit as st
-import pandas as pd
 from google import genai
 from google.genai import types
+from pdf2image import convert_from_bytes
 import json
+import io
 
-st.set_page_config(page_title="Excel → Gemini (multi-prompt OCR)", layout="wide")
-st.title("📊 Excel → Gemini — multi-prompt extractor")
+st.set_page_config(page_title="PDF → Gemini Hospital Course Extractor", layout="wide")
+st.title("🏥 PDF → Gemini — Hospital Course Extractor")
 
-uploaded = st.file_uploader("Upload Excel", type=["xlsx"])
+uploaded = st.file_uploader("Upload PDF File", type=["pdf"])
 api_key = st.text_input(
     "Paste Gemini API key",
     type="password",
@@ -20,121 +21,106 @@ model_option = st.selectbox(
     [
         "gemini-2.0-flash-exp",
         "gemini-2.5-flash",
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-8b",
         "gemini-1.5-pro",
-        "gemini-exp-1206"
+        "gemini-1.5-flash"
     ],
-    index=0,
-    help="Best models: gemini-2.0-flash-exp, gemini-2.5-flash"
+    index=0
 )
 
 if not uploaded:
-    st.info("Upload an Excel file.")
+    st.info("Please upload a PDF file.")
     st.stop()
 
 if not api_key.strip():
-    st.warning("Paste your Gemini API key to proceed.")
+    st.warning("Please enter your Gemini API key to proceed.")
     st.stop()
 
-# ✅ Read only the 3rd sheet
-try:
-    xls = pd.ExcelFile(uploaded)
-    sheet_name = xls.sheet_names[2]  # 3rd sheet (0-indexed)
-    df = pd.read_excel(xls, sheet_name=sheet_name)
-except Exception as e:
-    st.error(f"❌ Failed to read 3rd sheet: {e}")
-    st.stop()
-
-# Convert the sheet into text for Gemini
-text_data = df.to_string(index=False)
-
-# Initialize Gemini
+# ✅ Configure Gemini client
 try:
     client = genai.Client(api_key=api_key)
 except Exception as e:
-    st.error(f"Failed to initialize Gemini client: {e}")
+    st.error(f"❌ Failed to initialize Gemini client: {e}")
     st.stop()
 
-# Your same medication extraction prompt
+# 🧠 Your clinical extraction prompt
 hospital_course_prompt = """
-TASK:
-You are a licensed medical practitioner and clinical reviewer. From a medical document (digital, scanned, or handwritten), extract the Hospital Course / Clinical Summary paragraph and the two doctor names. Produce a single **plain text** sentence that follows the exact template below, changing only the two doctor names:
+You are a licensed medical practitioner and clinical reviewer. From this medical document (digital, scanned, or handwritten), extract the Hospital Course / Clinical Summary paragraph and the two doctor names. 
 
-Template (exact output format required):
+Produce a single **plain text** sentence that follows this exact format, changing only the two doctor names:
+
 Patient was admitted with above mentioned complaints and history. All relevant laboratory investigations done (Reports attached to the file). General condition and vitals of the patient closely monitored. Daily consulted by Dr. <SURGEON_OR_DAILY_DOCTOR_NAME>. Fitness for surgery given by Dr. <CONSULTANT_PHYSICIAN_NAME> (Consultant Physician). All preoperative assessment done, patient taken up for surgery.
 
-RULES — what to extract and how:
-1. Locate the Hospital Course / Clinical Summary section using tolerant heading matches such as:
-   - "Hospital Course", "HospitalCourse", "Clinical Summary", "Clinical Course", "Course in Hospital", "Hospital Course / Clinical Summary"
-   Capture the paragraph(s) belonging to that section and use the template above (do NOT change its text except for the two doctor names).
+RULES:
+- Identify “Hospital Course” or “Clinical Summary” section.
+- Replace only the two doctor names in the sentence above.
+- Surgeon/Daily Doctor:
+  * Labels: "Admitting Doctor", "Surgeon", "Daily consulted by"
+  * Format: Dr. <Full Name>
+- Consultant Physician:
+  * Labels: "Consultant Physician", "Consultant Dr"
+  * Format: Dr. <Full Name> (Consultant Physician)
+- If name not found or unreadable → use “Dr. NOT_FOUND”.
+- Do NOT output anything else.
+- Output this single line as plain text.
 
-2. Surgeon / Daily consulted doctor (insert as <SURGEON_OR_DAILY_DOCTOR_NAME>):
- - Labels: "Admitting Doctor", "Admitting Dr", "Admitting Doctor :"
- - Capture name exactly. If registration number appears on same line/in parentheses, omit it from this field.
- - If multiple candidate names appear, choose the name closest to the hospital-course or operative header. If still ambiguous or illegible, use "Dr. NOT_FOUND".
-
-3. Consultant Physician (insert as <CONSULTANT_PHYSICIAN_NAME>):
-   - Search labels: "Consultant Physician:", "Consultant:", "Consultant Dr", "Consultant Physician"
-   - Output exactly as "Dr. <Full Name>" inside the template, then append " (Consultant Physician)" as shown.
-   - If multiple candidates or illegible, use "Dr. NOT_FOUND".
-
-4. Handwriting & OCR:
-   - Attempt verbatim transcription where readable. If handwriting or OCR is low-confidence for a name, prefer "Dr. NOT_FOUND" rather than guessing.
-   - Strip registration numbers, material codes, or trailing parenthetical codes from extracted names.
-
-5. Strict output rule:
-   - Return **only one line** of plain text matching the Template exactly (with the two doctor names filled in).
-   - Do NOT output JSON, page numbers, notes, confidence, or any additional text or commentary.
-   - Example valid output (only this single-line sentence is allowed):
-     Patient was admitted with above mentioned complaints and history. All relevant laboratory investigations done (Reports attached to the file). General condition and vitals of the patient closely monitored. Daily consulted by Dr. Sahil Kiran Pethe. Fitness for surgery given by Dr. Vineet Rao (Consultant Physician). All preoperative assessment done, patient taken up for surgery.
-
-If a required doctor name is not found/confidently readable, insert "Dr. NOT_FOUND" in that position (still return the single-line sentence).
+Additionally, return the same information in JSON format:
+{
+  "hospital_course_text": "<above sentence>",
+  "surgeon_name": "<name>",
+  "consultant_physician_name": "<name>"
+}
 END TASK.
 """
 
+st.divider()
+st.subheader("🧠 Running Hospital Course Extraction...")
 
-# Define prompt dictionary
-prompts = {
-    "hospital_course_prompt": hospital_course_prompt
-}
+# ✅ Convert PDF pages to images
+images = convert_from_bytes(uploaded.read())
+st.info(f"Extracting from {len(images)} page(s)...")
 
-combined_output = {}
+all_results = []
+with st.spinner("Processing with Gemini..."):
+    for i, img in enumerate(images):
+        st.write(f"📄 Processing Page {i+1}...")
+        img_bytes = io.BytesIO()
+        img.save(img_bytes, format="PNG")
+        img_bytes.seek(0)
 
-with st.spinner("Processing Excel data..."):
-    for section_name, prompt_text in prompts.items():
         try:
-            # ✅ Send as plain text instead of file
             response = client.models.generate_content(
                 model=f"models/{model_option}",
-                contents=[prompt_text, text_data]
+                contents=[hospital_course_prompt, types.Part.from_bytes(img_bytes.read(), mime_type="image/png")]
             )
-            text = (response.text or "").strip() if response else ""
-            if not text:
-                st.warning(f"No response for {section_name}")
-                combined_output[section_name] = "NOT_FOUND"
-                continue
+
+            text = (response.text or "").strip()
+            st.markdown(f"### 🧾 Page {i+1} Output (Text)")
+            st.write(text)
 
             try:
-                parsed = json.loads(text)
-                st.json(parsed)
-                combined_output[section_name] = parsed
+                parsed_json = json.loads(text)
+                st.markdown(f"### 📦 Page {i+1} JSON")
+                st.json(parsed_json)
+                all_results.append(parsed_json)
             except json.JSONDecodeError:
-                st.warning(f"{section_name} output is not valid JSON")
-                st.code(text)
-                combined_output[section_name] = {"raw_text": text}
+                # If plain text only, wrap it into JSON
+                all_results.append({"hospital_course_text": text})
 
         except Exception as e:
-            st.error(f"Error during extraction: {e}")
-            combined_output[section_name] = {"error": str(e)}
+            st.error(f"Error on page {i+1}: {e}")
+            all_results.append({"error": str(e)})
 
-st.success(f"✅ Extraction completed using {model_option}!")
-st.json(combined_output)
+# ✅ Final combined output
+combined_json = json.dumps(all_results, indent=2)
+st.divider()
+st.success(f"✅ Extraction completed successfully using {model_option}!")
+st.json(all_results)
 
+# Download JSON
 st.download_button(
-    "💾 Download All Results (Combined JSON)",
-    data=json.dumps(combined_output, indent=2),
-    file_name="combined_extracted_data.json",
+    "💾 Download Extracted Results (JSON)",
+    data=combined_json,
+    file_name="hospital_course_extraction.json",
     mime="application/json"
 )
 
