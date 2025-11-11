@@ -1,14 +1,14 @@
 import streamlit as st
 from google import genai
 from google.genai import types
-from pdf2image import convert_from_bytes
 import json
 import pandas as pd
 import io
 
 st.set_page_config(page_title="PDF Text Extractor (Digital + Handwritten)", layout="wide")
-st.title("📄 PDF Page-by-Page Text Extractor — Digital + Handwritten")
-st.markdown("**Extracts text from each page using Gemini AI (supports printed and handwritten text)**")
+st.title("📄 PDF Text Extractor — Digital + Handwritten")
+st.markdown("**Extracts text from PDF using Gemini AI (supports printed and handwritten text)**")
+st.info("💡 This version processes the entire PDF at once without requiring poppler/pdf2image")
 
 # Upload and API key inputs
 uploaded = st.file_uploader("Upload PDF File", type=["pdf"])
@@ -31,7 +31,7 @@ model_option = st.selectbox(
 )
 
 if not uploaded:
-    st.info("👆 Please upload a PDF file to extract text page by page.")
+    st.info("👆 Please upload a PDF file to extract text.")
     st.stop()
 
 if not api_key.strip():
@@ -50,117 +50,144 @@ except Exception as e:
 
 st.success(f"✅ Using model: **{model_option}**")
 
-# OCR Prompt for text extraction
+# OCR Prompt for text extraction with page-by-page structure
 ocr_prompt = """
-You are an expert OCR (Optical Character Recognition) system with advanced capabilities to read both digital printed text and handwritten text from documents.
+You are an expert OCR (Optical Character Recognition) system with advanced capabilities to read both digital printed text and handwritten text from PDF documents.
 
-TASK: Extract ALL text visible on this page, including:
+TASK: Extract ALL text from this PDF document, organizing it PAGE BY PAGE.
+
+Extract text including:
 - Printed/typed text (digital text)
 - Handwritten text (cursive or printed handwriting)
 - Numbers, dates, and special characters
 - Text in any orientation or format
 
 INSTRUCTIONS:
-1. Read the ENTIRE page carefully
+1. Process EACH page separately
 2. Extract ALL visible text exactly as it appears
 3. Preserve the reading order (top to bottom, left to right)
-4. Maintain paragraph breaks and line spacing where appropriate
+4. Maintain paragraph breaks within each page
 5. If text is unclear or illegible, mark it as [ILLEGIBLE]
-6. If the page is blank or has no text, return "NO_TEXT_FOUND"
+6. If a page is blank or has no text, mark it as "NO_TEXT_FOUND"
 
-Return ONLY the extracted text in plain format. Do NOT add any explanations, headers, or metadata.
+CRITICAL: Return results as a JSON array with this EXACT format:
+[
+  {
+    "page": 1,
+    "text": "extracted text from page 1...",
+    "character_count": 1234
+  },
+  {
+    "page": 2,
+    "text": "extracted text from page 2...",
+    "character_count": 5678
+  }
+]
+
+Return ONLY the JSON array. Do NOT add explanations before or after the JSON.
 
 BEGIN EXTRACTION:
 """
 
-# Convert PDF to images
-with st.spinner("📄 Converting PDF pages to images..."):
-    try:
-        images = convert_from_bytes(pdf_bytes, dpi=200)  # Higher DPI for better quality
-        total_pages = len(images)
-        st.success(f"✅ Converted PDF to {total_pages} page(s)")
-    except Exception as e:
-        st.error(f"❌ Failed to convert PDF to images: {e}")
-        st.stop()
-
-# Process each page
-page_results = []
-
+# Process PDF
 st.markdown("---")
-st.subheader("📑 Extracting Text Page by Page")
+st.subheader("📑 Extracting Text from PDF")
 
-progress_bar = st.progress(0)
-status_text = st.empty()
-
-for page_num, img in enumerate(images, start=1):
-    status_text.text(f"Processing page {page_num}/{total_pages}...")
-    progress_bar.progress(page_num / total_pages)
-    
+with st.spinner("🤖 Processing PDF with Gemini AI..."):
     try:
-        # Convert PIL Image to bytes for Gemini
-        img_byte_arr = io.BytesIO()
-        img.save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0)
-        img_bytes = img_byte_arr.getvalue()
-        
-        # Create image part for Gemini
-        image_part = types.Part(
+        # Create PDF part for Gemini
+        pdf_part = types.Part(
             inline_data=types.Blob(
-                mime_type="image/png",
-                data=img_bytes
+                mime_type="application/pdf",
+                data=pdf_bytes
             )
         )
         
         # Call Gemini API
         response = client.models.generate_content(
             model=f"models/{model_option}",
-            contents=[image_part, ocr_prompt]
+            contents=[pdf_part, ocr_prompt]
         )
         
         # Extract text from response
-        extracted_text = (response.text or "").strip()
+        response_text = (response.text or "").strip()
         
-        if not extracted_text:
-            extracted_text = "NO_TEXT_FOUND"
+        if not response_text:
+            st.error("❌ No response from Gemini")
+            st.stop()
         
-        # Store result
-        page_results.append({
-            "Page": page_num,
-            "Text": extracted_text,
-            "Character_Count": len(extracted_text),
-            "Status": "✅ Success" if extracted_text != "NO_TEXT_FOUND" else "⚠️ Empty"
-        })
+        # Clean JSON from markdown code blocks
+        json_text = response_text
+        if "```json" in response_text:
+            json_text = response_text.split("```json")[1].split("```")[0].strip()
+        elif "```" in response_text:
+            json_text = response_text.split("```")[1].split("```")[0].strip()
         
+        # Show raw response in expander
+        with st.expander("🔍 View Raw Gemini Response"):
+            st.code(json_text, language="json")
+        
+        # Parse JSON
+        try:
+            page_results = json.loads(json_text)
+            
+            # Validate structure
+            if not isinstance(page_results, list):
+                st.error("❌ Response is not a list. Attempting to fix...")
+                page_results = [page_results] if isinstance(page_results, dict) else []
+            
+            # Add status field to each page
+            for page in page_results:
+                text = page.get('text', '')
+                if text == "NO_TEXT_FOUND" or not text.strip():
+                    page['status'] = '⚠️ Empty'
+                else:
+                    page['status'] = '✅ Success'
+                    
+                # Ensure character_count exists
+                if 'character_count' not in page:
+                    page['character_count'] = len(text)
+            
+            st.success(f"✅ Successfully extracted text from {len(page_results)} page(s)")
+            
+        except json.JSONDecodeError as e:
+            st.error(f"❌ Failed to parse JSON: {e}")
+            st.code(json_text[:1000])
+            st.stop()
+            
     except Exception as e:
-        st.error(f"❌ Error processing page {page_num}: {e}")
-        page_results.append({
-            "Page": page_num,
-            "Text": f"ERROR: {str(e)}",
-            "Character_Count": 0,
-            "Status": "❌ Failed"
-        })
-
-progress_bar.progress(1.0)
-status_text.text("✅ Extraction complete!")
+        st.error(f"❌ Error processing PDF: {e}")
+        st.stop()
 
 # Create DataFrame for results
 df_results = pd.DataFrame(page_results)
+
+# Rename columns for display
+column_mapping = {
+    'page': 'Page',
+    'text': 'Text',
+    'character_count': 'Character_Count',
+    'status': 'Status'
+}
+df_results = df_results.rename(columns=column_mapping)
 
 # Display summary statistics
 st.markdown("---")
 st.subheader("📊 Extraction Summary")
 
+total_pages = len(page_results)
+successful_pages = len([p for p in page_results if p['status'] == '✅ Success'])
+empty_pages = len([p for p in page_results if p['status'] == '⚠️ Empty'])
+total_chars = sum([p.get('character_count', 0) for p in page_results])
+
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("Total Pages", total_pages)
 with col2:
-    successful_pages = len([r for r in page_results if r['Status'] == '✅ Success'])
     st.metric("Successful", successful_pages)
 with col3:
-    empty_pages = len([r for r in page_results if r['Status'] == '⚠️ Empty'])
     st.metric("Empty Pages", empty_pages)
 with col4:
-    total_chars = sum([r['Character_Count'] for r in page_results])
     st.metric("Total Characters", f"{total_chars:,}")
 
 # Display page-by-page results
@@ -169,10 +196,10 @@ st.subheader("📄 Page-by-Page Results")
 
 # Show results in expandable sections
 for result in page_results:
-    page_num = result['Page']
-    status = result['Status']
-    text = result['Text']
-    char_count = result['Character_Count']
+    page_num = result['page']
+    status = result['status']
+    text = result['text']
+    char_count = result.get('character_count', 0)
     
     with st.expander(f"**Page {page_num}** — {status} ({char_count} characters)"):
         st.text_area(
@@ -198,9 +225,9 @@ with col1:
     full_text = ""
     for result in page_results:
         full_text += f"{'='*60}\n"
-        full_text += f"PAGE {result['Page']}\n"
+        full_text += f"PAGE {result['page']}\n"
         full_text += f"{'='*60}\n\n"
-        full_text += f"{result['Text']}\n\n"
+        full_text += f"{result['text']}\n\n"
     
     st.download_button(
         label="📄 Download as Text File",
@@ -235,3 +262,4 @@ with col3:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
+
