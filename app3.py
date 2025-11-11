@@ -1,51 +1,10 @@
 import streamlit as st
 from google import genai
 from google.genai import types
+from pdf2image import convert_from_bytes
 import json
 import pandas as pd
 import io
-
-# Try to import pdf2image, show helpful error if not installed
-try:
-    from pdf2image import convert_from_bytes
-except ImportError:
-    st.error("❌ pdf2image library not installed!")
-    st.markdown("""
-    **To fix this error, you need to:**
-    
-    1. Create a `requirements.txt` file with:
-    ```
-    streamlit
-    google-generativeai
-    pdf2image
-    pillow
-    pandas
-    openpyxl
-    ```
-    
-    2. Install system dependency (poppler):
-    
-    **On Ubuntu/Debian:**
-    ```bash
-    sudo apt-get install poppler-utils
-    ```
-    
-    **On macOS:**
-    ```bash
-    brew install poppler
-    ```
-    
-    **On Windows:**
-    - Download poppler from: https://github.com/oschwartz10612/poppler-windows/releases
-    - Extract and add to PATH
-    
-    **For Streamlit Cloud:**
-    - Create a `packages.txt` file with:
-    ```
-    poppler-utils
-    ```
-    """)
-    st.stop()
 
 st.set_page_config(page_title="PDF Text Extractor (Digital + Handwritten)", layout="wide")
 st.title("📄 PDF Page-by-Page Text Extractor — Digital + Handwritten")
