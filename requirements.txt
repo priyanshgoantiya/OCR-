@@ -3,6 +3,7 @@ pypdf
 requests
 google-genai
 requests
+pdf2image
 openpyxl
 
 
