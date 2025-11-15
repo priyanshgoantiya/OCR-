@@ -44,19 +44,37 @@ st.success(f"✅ Using model: {model_option}")
 
 # Prompt for Gemini OCR
 ocr_prompt = """
-You are an OCR (Optical Character Recognition) system. 
-Extract all readable text (printed or handwritten) from each page of the uploaded PDF.
+You are an OCR system. Extract all readable text (printed or handwritten) from each page of the uploaded PDF, BUT return only text contained in the following sections/headers (case-insensitive, including common variants and minor misspellings):
 
-Return the result in this simple plain text format:
+Target section headers (match any of these variants):
+- Manual - Progress note, Progress Note, Progress Notes, Manual Progress Note
+- OT Note, Operative Note, Operation Note, Operation Theatre Note, Operative Theatre Note
+- Anesthesia notes, Anaesthesia notes, Anesthetic Note, Anesthetist Note, Anaesthetic Note
+- MDM sheet, MDM, MDM Sheet, Multi-Disciplinary Meeting, Multidisciplinary Notes
+- Diet sheet, Diet Sheet, Dietary Chart, Diet Orders
+
+Rules:
+1. Search each page for any of the target headers. For each header found, extract all readable text that belongs to that section: include the header line and all text after it up to (but not including) the next heading (any heading in the document) or the end of the page, whichever comes first.
+2. Matching must be case-insensitive and tolerant of small variations (extra spaces, punctuation, abbreviations like "OT Note", or handwritten variants). If a header appears multiple times on a page, extract each occurrence's text in order.
+3. Include both printed and handwritten text exactly as read by OCR. Preserve original line breaks and ordering within each extracted section.
+4. Include names, dates, times, drug names, lab numbers, signatures, and any short structured entries that appear within the target sections.
+5. Do not extract text from sections other than the target list. Ignore unrelated headings/content.
+6. If a target header is present but no readable text follows it on that page, include the header followed by: "— NO_TEXT_FOUND".
+7. If none of the target sections are present on a page, write exactly:
+   Page X: NO_RELEVANT_SECTION_FOUND
+8. Return the result in this exact plain text page-wise format (no JSON, lists, or explanations):
+
 Page 1:
-<text of page 1>
+<Concatenated extracted text from target sections found on page 1>
 
 Page 2:
-<text of page 2>
+<Concatenated extracted text from target sections found on page 2>
 
-If a page is blank, write: "Page X: NO_TEXT_FOUND"
-Do not include JSON, lists, or explanations.
+...etc.
+
+Do not include OCR confidence scores, comments, or any text outside the specified format.
 """
+
 
 st.markdown("---")
 st.subheader("📑 Extracting Text...")
