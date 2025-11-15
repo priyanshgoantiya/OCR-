@@ -85,13 +85,6 @@ SECTION_LEGIBILITY: <legible>/<total> (legible %: <N>%)
 Page 2:
 <...>
 
-Examples of allowed inline content:
-- Names, e.g., "Dr. Sagar Bhalerao"
-- Dates/times, e.g., "26/03/2025 08:50 AM"
-- Lab values and units, e.g., "Hb 13.4 g/dL"
-- Short structured lines, e.g., "Drain: 200 ml"
-- Handwritten transcription verbatim (or [ILLEGIBLE_n] if unreadable)
-
 Strict requirements:
 - Every extracted section must be followed immediately by its SECTION_LEGIBILITY line.
 - Keep output minimal, page-wise, and exactly in the format above.
