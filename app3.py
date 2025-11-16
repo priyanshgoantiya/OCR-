@@ -43,72 +43,36 @@ except Exception as e:
 st.success(f"✅ Using model: {model_option}")
 
 # Prompt for Gemini OCR
-ocr_prompt = """
-You are a licensed medical practitioner, clinical reviewer, and OCR system experienced with typed and handwritten clinical notes. The uploaded document contains both printed text and doctor handwritten notes. Your job is to extract text **only** from the target clinical sections listed below, but be robust to handwriting, page breaks, header variants, margins, and small misspellings. The final output must be the simple page-wise plain text format described at the end of this prompt and must include a per-section legibility line.
+ocr_prompt =""" You are a licensed medical practitioner and OCR-capable clinical reviewer. The input is a patient medical document (printed and/or handwritten). Your job: extract **only** the text that documents the Hospital Course / Clinical Summary information (diagnostic tests/results, procedures/interventions, intra-op events, medications given verbatim, complications, immediate postoperative course, disposition/ discharge status) from the following target sections and return a simple page-wise plain-text output.
 
-PRIMARY OBJECTIVE (strict): extract the text under these headers (case-insensitive; tolerant of spacing/punctuation/typographic errors; allow common misspellings and handwritten forms):
-- Manual - Progress note, Progress Note, Progress Notes, Manual Progress Note, Progress Note(s), Doctor's Progress Notes
-- OT Note, Operative Note, Operation Note, Operation Theatre Note, Operative Theatre Note, Operative Notes, Operative Details
-- Anesthesia notes, Anaesthesia notes, Anesthetic Note, Anesthetist Note, Anaesthetic Note, Anaesthesia Record, Anaesthesia Chart
-- MDM sheet, MDM, MDM Sheet, Multi-Disciplinary Meeting, Multidisciplinary Notes, MDT, Case Discussion
-- Diet sheet, Diet Sheet, Dietary Chart, Diet Orders, Diet Plan
+TARGET HEADINGS (case-insensitive; allow small OCR/handwriting errors):
+Progress Note, Manual - Progress note, Doctor's Progress Note, OT Note, Operative Note, Operation Note, Operative Details, Operation Report, Anaesthesia notes, Anesthesia notes, MDM, MDM sheet, MDT, Diet sheet, Post-operative Orders, Post-op Notes, Postoperative Note.
 
-HEADER MATCHING (use all of the following heuristics):
-- Exact match of any variant (case-insensitive) OR
-- Regex match allowing small variations (e.g., optional punctuation, extra words like "Record/Notes/Sheet") OR
-- Fuzzy match: accept if normalized token similarity ≥ 0.80 (or Levenshtein distance ≤ 2 for short headers) to tolerate OCR errors and handwriting.
-- Recognize headers appearing in body, top-right/top-left margins, headers/footers, underlines, boxed text, or handwritten with underlines/arrows.
-- If multiple candidate header matches overlap, treat them as distinct occurrences and extract each in the order they appear on the page.
+EXTRACTION RULES (short & strict)
+1. Find each target heading; extract that heading line and **all readable text that belongs to that section** up to the next recognized heading or page end. If a section continues across pages without a new heading, continue extraction onto the next page.
+2. Include printed and handwritten text verbatim. Do **not** invent or infer clinical facts. If a token is unreadable, replace that single token with `[ILLEGIBLE_n]` (n resets per page).
+3. For Hospital Course content, actively include any lines that mention: investigations/results (e.g., Hb, Cr, USG, CT), procedures/interventions (e.g., PTCA, PTCA to LCX), devices/implants (DES, stent, sheath, Foley), medications and doses **only if verbatim** (e.g., "Heparin IV 11,000 units"), intra-op events/complications (hypotension, bradycardia, vasovagal), immediate postop course (shifted to ICU/ward, sheath removed), and discharge statements (discharged, stable, improved). Preserve exact tokens and numbers as they appear.
+4. If a heading is present but no readable text follows on that page, output the heading then the line: `NO_TEXT_FOUND`.
+5. Do not add summaries, interpretations, or additional clinical facts. Minimal linking words are allowed only if needed to join adjacent fragments read from the document — do not invent content.
+6. If no target headings/text are found on a page, output `NO_RELEVANT_SECTION_FOUND` for that page.
 
-EXTRACTION RULES (strictly enforce):
-1. For each matched header on each page, extract the header line AND **all readable text that belongs to that section** up to (but not including) the next recognized heading (any heading) OR the explicit section terminator (e.g., "Post-op", "Discharge", "Signature") OR the end of that page — whichever comes first.
-2. **Sections may span pages.** If a section continues to the next page without an intervening recognized header, continue extraction onto subsequent pages until the section ends. Preserve page ordering and line breaks.
-3. Preserve exact original line breaks and ordering within each extracted section. Do not normalize punctuation, hyphenation, or line splitting.
-4. Include printed and handwritten text **verbatim** as read by OCR: names, dates, times, drug names, lab numbers, signatures, short structured entries (e.g., "Drain: 200 ml"), and margin notes that clearly belong to the section.
-5. If a word/character is unreadable, replace that single token with a sequential placeholder **[ILLEGIBLE_n]** (n resets to 1 for each page). Preserve punctuation immediately adjacent to the token.
-6. **If a header is found but nothing legible follows on that page**, output the header line followed by:
-   — NO_TEXT_FOUND
-   Then the legibility line (see below).
-7. **When the same section/header appears multiple times (duplicates) on the same document**, prefer the most complete occurrence (highest word count). If multiple occurrences are present on different pages and are clearly separate daily notes, keep all occurrences in chronological order.
-
-ROBUSTNESS / FALLBACK (to avoid tiny/irrelevant extracts):
-8. After the strict extraction pass, compute the total extracted character count across the entire document.
-   - If total_extracted_chars >= 1,000 (approx) → accept strict extraction results.
-   - If total_extracted_chars < 1,000 (i.e., extremely small) → perform one relaxed pass and **auto-extract** additional candidate lines to avoid missing content. Relaxed pass rules (ONLY if strict pass returns tiny output):
-     a. Extract paragraphs or lines anywhere in the document that contain any of these keywords (case-insensitive, allow small OCR errors): "operat", "partial nephrectomy", "DJ stent", "cystoscopy", "methylene", "drain", "foley", "hematuria", "creat", "Hb", "WBC", "MRI", "USG", "CT", "histopath", "discharge", "post op", "post-op", "ICU", "NBM", "diet", "MDM", "anesth", "anaesth".
-     b. For each extracted paragraph in the relaxed pass, prepend a header line using the nearest matching target header name if one is found on the same/adjacent page; if none is nearby, prepend the header line:
-        AUTO_EXTRACTED_SECTION: <matching_keyword_context>
-     c. Still apply [ILLEGIBLE_n] placeholders and SECTION_LEGIBILITY lines for these auto-extracted sections.
-9. Do not include OCR confidences, internal scores, or comments in the output.
-
-LEGIBILITY SUMMARY (required for each extracted section)
-10. Immediately after each extracted section (on the next line), include:
-    SECTION_LEGIBILITY: <legible_word_count>/<total_word_count> (legible %: <percentage_rounded_to_integer>%)
-    - total_word_count = count of whitespace-separated tokens in the extracted section (placeholders [ILLEGIBLE_n] count as tokens).
-    - legible_word_count = total_word_count − number_of_[ILLEGIBLE_*].
-    - Round percentage to nearest whole number.
-
-OUTPUT FORMAT (exact plain text — follow exactly; no JSON, no extra commentary):
-- The output must be **page-wise**. For each page from 1..N, output either the concatenated extracted sections (in the order found) or the NO_RELEVANT_SECTION_FOUND line.
+OUTPUT FORMAT (exact plain text)
+For each page 1..N output either the concatenated extracted sections (in the order they appear) or `NO_RELEVANT_SECTION_FOUND`. Use this exact layout:
 
 Page 1:
-<Header line 1 found on page 1>
-<lines of text belonging to that header, verbatim, with [ILLEGIBLE_n] placeholders if any>
-SECTION_LEGIBILITY: <legible>/<total> (legible %: <N>%)
-<If second target header appears on same page, include it next in the same Page 1 block using same pattern>
+<Header line found on page 1>
+<verbatim lines from that section, including handwriting, with [ILLEGIBLE_n] for unreadable tokens>
+<next header on same page, if any>
+<verbatim lines...>
 
 Page 2:
-<...>
+...
 
-- If a section spans pages, include its continuation in the corresponding page blocks (i.e., split across Page X and Page X+1 blocks as it appears), each block followed by its SECTION_LEGIBILITY for that page's portion.
-- If strict pass produced no target sections and relaxed pass generated AUTO_EXTRACTED_SECTION entries, include those in the same page-wise format.
+Example for a page with no target content:
+Page 3:
+NO_RELEVANT_SECTION_FOUND
 
-ADDITIONAL RULES (do not change):
-- Do NOT include any text outside the page blocks described above (no preface, no summary, no confidences, no JSON).
-- Do NOT include OCR engine internal metadata or scores.
-- Maintain the original character ordering and line breaks.
-
-End of prompt.
+End — return only the page blocks as above. No JSON, no extra commentary, no confidences.
 """
 
 
